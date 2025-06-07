@@ -449,56 +449,87 @@
 
         // 加载所有数据
         async function loadState() {
-            // 1. 获取所有status=Completed的任务单号
-            const { data: completedTasks, error: tasksError } = await supabase
-                .from('tasks')
-                .select('id')
-                .eq('status', 'Completed');
-            if (tasksError) { console.error(tasksError); return; }
-
-            // 1.5. 获取所有自建单号
-            const { data: customTasks, error: customError } = await supabase
-                .from('driver_custom_tasks')
-                .select('id');
-            if (customError) { console.error(customError); return; }
-
-            // 2. 获取所有司机
-            const { data: drivers, error: driversError } = await supabase
-                .from('drivers')
-                .select('*');
-            if (driversError) { console.error(driversError); return; }
-
-            // 3. 获取所有已分配任务
-            const { data: schedules, error: schedulesError } = await supabase
-                .from('driver_schedules')
-                .select('*');
-            if (schedulesError) { console.error(schedulesError); return; }
-
-            // 4. 组装state.tasks
-            // 先全部设为unassigned（合并两张表的单号）
-            const allTaskIds = [
-                ...completedTasks.map(t => t.id),
-                ...customTasks.map(t => t.id)
-            ];
-            // 去重
-            const uniqueTaskIds = Array.from(new Set(allTaskIds));
-            state.tasks = uniqueTaskIds.map(id => ({ id, status: 'unassigned' }));
-            // 再用driver_schedules覆盖为assigned
-            schedules.forEach(sch => {
-                const idx = state.tasks.findIndex(t => t.id === sch.task_id);
-                if (idx !== -1) {
-                    state.tasks[idx] = {
-                        id: sch.task_id,
-                        status: 'assigned',
-                        driverId: sch.driver_id,
-                        slotIndex: sch.slot_index,
-                        length: sch.length,
-                        colorIdx: sch.color_idx
-                    };
+            try {
+                // 1. 获取所有status=Completed的任务单号
+                const { data: completedTasks, error: tasksError } = await supabase
+                    .from('tasks')
+                    .select('id')
+                    .eq('status', 'Completed');
+                if (tasksError) { 
+                    console.error('获取已完成任务失败:', tasksError);
+                    alert('获取已完成任务失败: ' + tasksError.message);
+                    return;
                 }
-            });
-            state.drivers = drivers;
-            console.log('drivers:', state.drivers);
+
+                // 1.5. 获取所有自建单号
+                const { data: customTasks, error: customError } = await supabase
+                    .from('driver_custom_tasks')
+                    .select('id');
+                if (customError) { 
+                    console.error('获取自建任务失败:', customError);
+                    alert('获取自建任务失败: ' + customError.message);
+                    return;
+                }
+
+                // 2. 获取所有司机
+                const { data: drivers, error: driversError } = await supabase
+                    .from('drivers')
+                    .select('*');
+                if (driversError) { 
+                    console.error('获取司机列表失败:', driversError);
+                    alert('获取司机列表失败: ' + driversError.message);
+                    return;
+                }
+
+                // 检查司机数据
+                if (!drivers || !Array.isArray(drivers)) {
+                    console.error('司机数据无效:', drivers);
+                    alert('司机数据无效');
+                    return;
+                }
+
+                // 3. 获取所有已分配任务
+                const { data: schedules, error: schedulesError } = await supabase
+                    .from('driver_schedules')
+                    .select('*');
+                if (schedulesError) { 
+                    console.error('获取任务分配失败:', schedulesError);
+                    alert('获取任务分配失败: ' + schedulesError.message);
+                    return;
+                }
+
+                // 4. 组装state.tasks
+                // 先全部设为unassigned（合并两张表的单号）
+                const allTaskIds = [
+                    ...(completedTasks || []).map(t => t.id),
+                    ...(customTasks || []).map(t => t.id)
+                ];
+                // 去重
+                const uniqueTaskIds = Array.from(new Set(allTaskIds));
+                state.tasks = uniqueTaskIds.map(id => ({ id, status: 'unassigned' }));
+                
+                // 再用driver_schedules覆盖为assigned
+                (schedules || []).forEach(sch => {
+                    const idx = state.tasks.findIndex(t => t.id === sch.task_id);
+                    if (idx !== -1) {
+                        state.tasks[idx] = {
+                            id: sch.task_id,
+                            status: 'assigned',
+                            driverId: sch.driver_id,
+                            slotIndex: sch.slot_index,
+                            length: sch.length,
+                            colorIdx: sch.color_idx
+                        };
+                    }
+                });
+
+                // 更新司机列表
+                state.drivers = drivers;
+                console.log('当前司机列表:', state.drivers);
+            } catch (err) {
+                console.error('加载状态时发生错误:', err);
+                alert('加载状态时发生错误: ' + err.message);
+            }
         }
 
         // 保存分配/删除/修改任务到Supabase
@@ -1070,13 +1101,34 @@
         // ========== 添加司机按钮逻辑 ==========
         const addDriverBtn = document.getElementById('addDriverBtn');
         addDriverBtn.onclick = async function() {
-            const newId = 'driver-' + (state.drivers.length + 1);
-            const newDriver = {id: newId, name: 'Driver ' + (state.drivers.length + 1)};
-            // 插入到 Supabase drivers 表
-            await supabase.from('drivers').insert([newDriver]);
-            // 重新加载数据并渲染
-            await loadState();
-            renderTasks();
+            try {
+                // 查找所有现有司机ID中的最大编号
+                let maxNum = 0;
+                state.drivers.forEach(d => {
+                    const match = /^driver-(\d+)$/.exec(d.id);
+                    if (match) {
+                        const num = parseInt(match[1], 10);
+                        if (num > maxNum) maxNum = num;
+                    }
+                });
+                const newId = 'driver-' + (maxNum + 1);
+                const newDriver = {id: newId, name: 'Driver ' + (maxNum + 1)};
+                // 插入到 Supabase drivers 表
+                const { data, error } = await supabase.from('drivers').insert([newDriver]);
+                if (error) {
+                    console.error('添加司机失败:', error);
+                    alert('添加司机失败: ' + error.message);
+                    return;
+                }
+                console.log('新司机数据:', data);
+                // 重新加载数据并渲染
+                await loadState();
+                renderTasks();
+                console.log('当前司机列表:', state.drivers);
+            } catch (err) {
+                console.error('添加司机时发生错误:', err);
+                alert('添加司机时发生错误: ' + err.message);
+            }
         };
 
         // ========== 导出CSV逻辑 ==========
