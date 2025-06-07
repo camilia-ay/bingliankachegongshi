@@ -1,0 +1,1040 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Supabase Task Table</title>
+  <style>
+    /* 导航菜单样式 */
+    .nav-trigger {
+      position: fixed;
+      left: 0;
+      top: 0;
+      width: 10px;
+      height: 100vh;
+      z-index: 1000;
+    }
+    .nav-menu {
+      position: fixed;
+      left: -200px;
+      top: 0;
+      width: 200px;
+      background: #fff;
+      box-shadow: 2px 0 8px rgba(0,0,0,0.1);
+      transition: left 0.3s ease;
+      z-index: 999;
+      padding: 20px 0;
+      border-radius: 0 8px 8px 0;
+    }
+    .nav-menu.show {
+      left: 0;
+    }
+    .nav-menu ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .nav-menu li {
+      padding: 12px 20px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .nav-menu li:hover {
+      background: #f5f5f5;
+    }
+    .nav-menu li.active {
+      background: #F7941D;
+      color: #fff;
+    }
+    .nav-menu li.active:hover {
+      background: #e5851a;
+    }
+    body { 
+      font-family: Arial, sans-serif;
+      background: #f5f5f5;
+      margin: 0;
+      padding: 20px;
+    }
+    .main-container {
+      width: 1800px;
+      max-width: 99vw;
+      margin: 0 auto;
+    }
+    .header {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 28px;
+    }
+    .logo {
+      height: 60px;
+      width: auto;
+    }
+    .orange-btn {
+      background: #F7941D;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-right: 8px;
+      height: 36px;
+      min-width: 36px;
+      font-size: 16px;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 36px;
+      padding: 0 16px;
+      transition: background 0.2s;
+    }
+    .orange-btn:hover {
+      background: #e5851a;
+    }
+    .btn-row {
+      margin-top: 8px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .x-btn {
+      background: none;
+      border: none;
+      color: #e74c3c;
+      font-size: 18px;
+      cursor: pointer;
+      padding: 0 6px;
+      line-height: 1;
+      font-weight: bold;
+      transition: color 0.2s;
+      width: 22px;
+      height: 22px;
+      display: none;
+    }
+    tr:hover .x-btn {
+      display: inline;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 20px;
+      background: #fff;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    th, td {
+      border: 1px solid #f2f2f2;
+      padding: 12px 8px;
+      text-align: left;
+      min-width: 60px;
+    }
+    th {
+      background: #F7941D;
+      color: #fff;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .driver-input {
+      padding: 0 8px;
+      margin-right: 4px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      outline: none;
+      background: #fff;
+      height: 36px;
+      font-size: 16px;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      line-height: 36px;
+    }
+    .input-cell {
+      border: none;
+      outline: none;
+      background: #fafafa;
+      width: 100%;
+      font-size: 15px;
+      padding: 4px 2px;
+      box-sizing: border-box;
+      transition: background 0.2s;
+    }
+    .input-cell:focus {
+      background: #fffbe6;
+    }
+    .pallets-input {
+      width: 36px;
+      text-align: center;
+    }
+    .cell-btn {
+      width: 100%;
+      background: none;
+      border: none;
+      text-align: left;
+      padding: 4px 2px;
+      font-size: 15px;
+      cursor: pointer;
+      color: #333;
+    }
+    .cell-btn:focus {
+      background: #fffbe6;
+      outline: none;
+    }
+    .success {
+      background: #e8f5e9;
+    }
+    .disabled-row {
+      background: #f5f5f5 !important;
+      color: #bbb;
+      cursor: not-allowed;
+      opacity: 0.7;
+    }
+    /* 拖拽预览样式 */
+    .drag-preview {
+      background: #fff;
+      border: 2px solid #F7941D;
+      border-radius: 4px;
+      padding: 8px 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      color: #333;
+    }
+    .drag-preview .pallet-count {
+      background: #F7941D;
+      color: #fff;
+      padding: 2px 6px;
+      border-radius: 10px;
+      font-size: 12px;
+    }
+    /* 拖拽托盘块样式 */
+    .pallet-block {
+      width: 32px;
+      height: 32px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      font-weight: bold;
+      color: #fff;
+      cursor: grab;
+      user-select: none;
+      border: 2px solid #fff;
+      box-shadow: 0 1px 4px #0001;
+      transition: all 0.2s;
+      position: relative;
+    }
+    .pallet-block[data-color="0"] { background: #F7941D; }
+    .pallet-block[data-color="1"] { background: #4A90E2; }
+    .pallet-block[data-color="2"] { background: #50B96A; }
+    .pallet-block[data-color="3"] { background: #B95050; }
+    .pallet-block[data-color="4"] { background: #A67C52; }
+    .pallet-block[data-color="5"] { background: #8B6FCB; }
+    .pallet-block[data-color="6"] { background: #E2C44A; color: #333; }
+    .pallet-block[data-color="7"] { background: #E26A4A; }
+    .pallet-block[data-color="8"] { background: #4AE2C1; color: #333; }
+    .pallet-block[data-color="9"] { background: #E24AD2; }
+    .pallet-block.dragging { 
+      opacity: 0.8; 
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      transform: scale(1.1);
+    }
+    .pallet-block .del-btn {
+      position: absolute;
+      top: -8px;
+      right: -8px;
+      width: 18px;
+      height: 18px;
+      background: #fff;
+      color: #e74c3c;
+      border: 1px solid #e74c3c;
+      border-radius: 50%;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 2;
+      opacity: 0.8;
+      transition: background 0.2s;
+    }
+    .pallet-block .del-btn:hover {
+      background: #e74c3c;
+      color: #fff;
+      opacity: 1;
+    }
+    .truck-area {
+      margin-top: 40px;
+    }
+    .truck-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 32px;
+      width: 100%;
+    }
+    .truck-card {
+      background: #fff;
+      box-shadow: 0 2px 12px rgba(247,148,29,0.10), 0 1.5px 6px rgba(0,0,0,0.06);
+      border-radius: 16px;
+      padding: 20px 0 16px 0;
+      width: calc(50% - 16px);
+      min-width: 0;
+      margin-bottom: 32px;
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      position: relative;
+      transition: box-shadow 0.2s;
+    }
+    .truck-card:hover {
+      box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    }
+    .truck-driver-col {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      min-width: 180px;
+      margin-left: 8px;
+      height: 100%;
+      margin-right: 8px;
+    }
+    .truck-driver-select {
+      height: 44px;
+      font-size: 18px;
+      border-radius: 12px;
+      border: 1.5px solid #F7941D;
+      padding: 0 18px;
+      background: #fff;
+      min-width: 120px;
+      margin-bottom: 0;
+      box-shadow: 0 1.5px 6px rgba(247,148,29,0.08);
+      transition: border 0.2s, box-shadow 0.2s;
+    }
+    .truck-driver-select:focus {
+      border: 1.5px solid #e5851a;
+      box-shadow: 0 2px 8px rgba(247,148,29,0.15);
+    }
+    .truck-driver-name {
+      font-size: 18px;
+      color: #F7941D;
+      font-weight: bold;
+      padding: 8px 18px;
+      border-radius: 12px;
+      background: #fff;
+      min-width: 120px;
+      cursor: pointer;
+      border: 1.5px solid #fff;
+      transition: border 0.2s;
+    }
+    .truck-driver-name:hover {
+      border: 1.5px solid #F7941D;
+      background: #fffbe6;
+    }
+    .truck-layout-col {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      padding-left: 0;
+      padding-right: 16px;
+    }
+    .truck-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 4px;
+      min-width: 0;
+    }
+    .truck-space {
+      width: 24px;
+      height: 24px;
+      display: inline-block;
+    }
+    .truck-slot-label {
+      width: 32px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      color: #b97a1d;
+      font-weight: 500;
+      margin: 0 2px;
+      user-select: none;
+      letter-spacing: 0.5px;
+      box-sizing: border-box;
+    }
+    .truck-slot {
+      width: 32px;
+      height: 32px;
+      background: #faf8f4;
+      border: 1.5px solid #F7941D;
+      border-radius: 10px;
+      margin: 0 2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      color: #F7941D;
+      font-weight: bold;
+      box-sizing: border-box;
+      user-select: none;
+      position: relative;
+      transition: all 0.2s;
+      box-shadow: 0 1.5px 6px rgba(247,148,29,0.06);
+      cursor: pointer;
+    }
+    .truck-slot.over {
+      outline: 2px dashed #F7941D;
+      outline-offset: 1px;
+      background: #fffbe6;
+      box-shadow: 0 2px 8px rgba(247,148,29,0.15);
+    }
+    .add-truck-btn {
+      margin-bottom: 20px;
+      margin-top: 0;
+    }
+    .truck-footer {
+      margin-top: 12px;
+      display: flex;
+      align-items: center;
+    }
+    #msg {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 12px 20px;
+      border-radius: 4px;
+      font-size: 14px;
+      z-index: 1000;
+      animation: slideIn 0.3s ease-out;
+    }
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <!-- 导航菜单 -->
+  <div class="nav-trigger" id="navTrigger"></div>
+  <div class="nav-menu" id="navMenu">
+    <ul>
+      <li class="active" onclick="window.location.href='index.html'">Truck</li>
+      <li onclick="window.location.href='work_hour.html'">Work Hour</li>
+    </ul>
+  </div>
+
+  <div class="main-container">
+    <div class="header">
+      <img src="logo.png" alt="Logo" class="logo">
+    </div>
+    <table id="taskTable">
+      <thead>
+        <tr>
+          <th></th>
+          <th>NO.</th>
+          <th>DATE</th>
+          <th>DEPOT</th>
+          <th>TRUCK</th>
+          <th>DRIVER</th>
+          <th>CLIENT</th>
+          <th>ORDER NO.</th>
+          <th>PALLETS</th>
+          <th>CONTACT DETAILS</th>
+          <th>DELIVERY ADDRESS</th>
+          <th>NOTES</th>
+        </tr>
+      </thead>
+      <tbody id="taskTableBody"></tbody>
+    </table>
+    <div class="btn-row">
+      <button class="orange-btn" onclick="addTask()">+</button>
+      <button class="orange-btn" onclick="downloadCSV()">Download</button>
+      <input class="driver-input" id="newDriverName" placeholder="New Driver Name" />
+      <button class="orange-btn" onclick="addDriver()">Add Driver</button>
+    </div>
+    <div id="msg"></div>
+
+    <!-- 卡车可视化区域 -->
+    <div class="truck-area">
+      <div class="truck-list" id="truckList"></div>
+      <div class="truck-footer">
+        <button class="orange-btn add-truck-btn" onclick="addTruck()">Add Truck</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.7/dist/umd/supabase.min.js"></script>
+  <script>
+    // 导航菜单功能
+    const navTrigger = document.getElementById('navTrigger');
+    const navMenu = document.getElementById('navMenu');
+    let menuTimeout;
+
+    navTrigger.addEventListener('mouseenter', () => {
+      clearTimeout(menuTimeout);
+      navMenu.classList.add('show');
+    });
+
+    navTrigger.addEventListener('mousemove', (e) => {
+      navMenu.style.top = e.clientY - 100 + 'px';
+    });
+
+    navMenu.addEventListener('mouseleave', () => {
+      menuTimeout = setTimeout(() => {
+        navMenu.classList.remove('show');
+      }, 300);
+    });
+
+    const supabaseUrl = 'https://epxnzvmxmtcacdmdeezz.supabase.co';
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVweG56dm14bXRjYWNkbWRlZXp6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg4NTkyMjQsImV4cCI6MjA2NDQzNTIyNH0.D0N3G4DO7at7TH_VwoW1PwOZMkrD4tKJo0bcepAb5v8';
+    const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+    let drivers = [];
+    let tasks = [];
+    let trucks = [];
+    let allocations = [];
+    let editing = {};
+    let focusMap = [];
+
+    async function fetchDrivers() {
+      const { data } = await supabase.from('my_drivers').select('*').order('created_at', { ascending: true });
+      drivers = data || [];
+    }
+    async function fetchTasks() {
+      const { data } = await supabase.from('my_tasks').select('*').order('no', { ascending: true });
+      tasks = data || [];
+    }
+    async function fetchTrucks() {
+      const { data } = await supabase.from('my_trucks').select('*').order('created_at', { ascending: true });
+      trucks = data || [];
+    }
+    async function fetchAllocations() {
+      const { data } = await supabase.from('my_pallet_allocations').select('*');
+      allocations = data || [];
+    }
+    async function refresh() {
+      await fetchDrivers();
+      await fetchTasks();
+      await fetchTrucks();
+      await fetchAllocations();
+      renderTable();
+      renderTrucks();
+    }
+
+    // 任务表格渲染
+    function renderTable() {
+      const tbody = document.getElementById('taskTableBody');
+      tbody.innerHTML = '';
+      tasks.forEach((task, idx) => {
+        const tr = document.createElement('tr');
+        // 判断是否有分配的托盘块
+        const allocatedCount = allocations.filter(a => a.task_id === task.id).length;
+        const total = task.pallets || 1;
+        const isAllocated = allocatedCount > 0;
+        if (isAllocated) tr.style.background = '#e8f5e9';
+        // 拖拽限制
+        if (isAllocated) {
+          tr.classList.add('disabled-row');
+          tr.setAttribute('draggable', 'false');
+        } else {
+          tr.classList.remove('disabled-row');
+          tr.setAttribute('draggable', 'true');
+          tr.ondragstart = e => {
+            // 创建拖拽预览
+            const preview = document.createElement('div');
+            preview.className = 'drag-preview';
+            preview.innerHTML = `
+              <span>Task ${task.no}</span>
+              <span class="pallet-count">${total} Pallets</span>
+            `;
+            e.dataTransfer.setDragImage(preview, 0, 0);
+            e.dataTransfer.setData('text/plain', JSON.stringify({ task_id: task.id, pallets: total }));
+            tr.classList.add('dragging');
+          };
+          tr.ondragend = e => {
+            tr.classList.remove('dragging');
+          };
+        }
+        // 删除按钮
+        const tdDel = document.createElement('td');
+        if (task.id) {
+          const btnDel = document.createElement('button');
+          btnDel.className = 'x-btn';
+          btnDel.textContent = 'x';
+          btnDel.onclick = () => deleteTask(task.id);
+          tdDel.appendChild(btnDel);
+        }
+        tr.appendChild(tdDel);
+        // NO.
+        const tdNo = document.createElement('td');
+        tdNo.textContent = idx + 1;
+        tr.appendChild(tdNo);
+        // DATE
+        const tdDate = document.createElement('td');
+        if (editing.date === idx) {
+          const inputDate = document.createElement('input');
+          inputDate.type = 'date';
+          inputDate.value = task.date || new Date().toISOString().slice(0,10);
+          inputDate.className = 'input-cell';
+          inputDate.onblur = () => { editing.date = undefined; renderTable(); };
+          inputDate.onchange = e => { if(task.id) updateTask(task.id, { date: e.target.value }); editing.date = undefined; renderTable(); };
+          inputDate.onkeydown = e => { if(e.key==='Enter'){ editing.date = undefined; focusNext(idx, 2); } };
+          tdDate.appendChild(inputDate);
+          setTimeout(()=>inputDate.focus(), 0);
+        } else {
+          const btn = document.createElement('button');
+          btn.className = 'cell-btn';
+          btn.textContent = task.date || '';
+          btn.onclick = () => { editing = { date: idx }; renderTable(); };
+          tdDate.appendChild(btn);
+        }
+        tr.appendChild(tdDate);
+        // DEPOT
+        const tdDepot = document.createElement('td');
+        tdDepot.textContent = task.depot || 'MEL-SYD';
+        tr.appendChild(tdDepot);
+        // TRUCK
+        const tdTruck = document.createElement('td');
+        tdTruck.textContent = task.truck_type || 'B-DOUBLE';
+        tr.appendChild(tdTruck);
+        // DRIVER
+        const tdDriver = document.createElement('td');
+        if (editing.driver === idx) {
+          const selDriver = document.createElement('select');
+          selDriver.className = 'input-cell';
+          const optEmpty = document.createElement('option');
+          optEmpty.value = '';
+          optEmpty.textContent = '--Select--';
+          selDriver.appendChild(optEmpty);
+          drivers.forEach(d => {
+            const opt = document.createElement('option');
+            opt.value = d.id;
+            opt.textContent = d.name;
+            if (d.id === task.driver_id) opt.selected = true;
+            selDriver.appendChild(opt);
+          });
+          selDriver.onblur = () => { editing.driver = undefined; renderTable(); };
+          selDriver.onchange = e => { if(task.id) updateTask(task.id, { driver_id: e.target.value }); editing.driver = undefined; renderTable(); };
+          selDriver.onkeydown = e => { if(e.key==='Enter'){ editing.driver = undefined; focusNext(idx, 5); } };
+          tdDriver.appendChild(selDriver);
+          setTimeout(()=>selDriver.focus(), 0);
+        } else {
+          const btn = document.createElement('button');
+          btn.className = 'cell-btn';
+          btn.textContent = drivers.find(d=>d.id===task.driver_id)?.name || '';
+          btn.onclick = () => { editing = { driver: idx }; renderTable(); };
+          tdDriver.appendChild(btn);
+        }
+        tr.appendChild(tdDriver);
+        // CLIENT
+        const tdClient = document.createElement('td');
+        const inputClient = document.createElement('input');
+        inputClient.value = task.client || '';
+        inputClient.className = 'input-cell';
+        inputClient.onblur = () => { if(task.id) updateTask(task.id, { client: inputClient.value }); };
+        inputClient.onkeydown = e => { if(e.key==='Enter'){ focusNext(idx, 6); } };
+        tdClient.appendChild(inputClient);
+        tr.appendChild(tdClient);
+        focusMap.push(inputClient);
+        // ORDER NO.
+        const tdOrder = document.createElement('td');
+        const inputOrder = document.createElement('input');
+        inputOrder.value = task.order_no || '';
+        inputOrder.className = 'input-cell';
+        inputOrder.onblur = () => { if(task.id) updateTask(task.id, { order_no: inputOrder.value }); };
+        inputOrder.onkeydown = e => { if(e.key==='Enter'){ focusNext(idx, 7); } };
+        tdOrder.appendChild(inputOrder);
+        tr.appendChild(tdOrder);
+        focusMap.push(inputOrder);
+        // PALLETS
+        const tdPallets = document.createElement('td');
+        const inputPallets = document.createElement('input');
+        inputPallets.type = 'number';
+        inputPallets.min = 1;
+        inputPallets.max = 99;
+        inputPallets.value = task.pallets || 1;
+        inputPallets.className = 'input-cell pallets-input';
+        inputPallets.onblur = () => { if(task.id) updateTask(task.id, { pallets: parseInt(inputPallets.value) }); };
+        inputPallets.onkeydown = e => { if(e.key==='Enter'){ focusNext(idx, 8); } };
+        tdPallets.appendChild(inputPallets);
+        tr.appendChild(tdPallets);
+        focusMap.push(inputPallets);
+        // CONTACT DETAILS
+        const tdContact = document.createElement('td');
+        const inputContact = document.createElement('input');
+        inputContact.value = task.contact_details || '';
+        inputContact.className = 'input-cell';
+        inputContact.onblur = () => { if(task.id) updateTask(task.id, { contact_details: inputContact.value }); };
+        inputContact.onkeydown = e => { if(e.key==='Enter'){ focusNext(idx, 9); } };
+        tdContact.appendChild(inputContact);
+        tr.appendChild(tdContact);
+        focusMap.push(inputContact);
+        // DELIVERY ADDRESS
+        const tdAddr = document.createElement('td');
+        const inputAddr = document.createElement('input');
+        inputAddr.value = task.delivery_address || '';
+        inputAddr.className = 'input-cell';
+        inputAddr.onblur = () => { if(task.id) updateTask(task.id, { delivery_address: inputAddr.value }); };
+        inputAddr.onkeydown = e => { if(e.key==='Enter'){ focusNext(idx, 10); } };
+        tdAddr.appendChild(inputAddr);
+        tr.appendChild(tdAddr);
+        focusMap.push(inputAddr);
+        // NOTES
+        const tdNotes = document.createElement('td');
+        const inputNotes = document.createElement('input');
+        inputNotes.value = task.notes || '';
+        inputNotes.className = 'input-cell';
+        inputNotes.onblur = () => { if(task.id) updateTask(task.id, { notes: inputNotes.value }); };
+        inputNotes.onkeydown = e => { if(e.key==='Enter'){ focusNext(idx, 11); } };
+        tdNotes.appendChild(inputNotes);
+        tr.appendChild(tdNotes);
+        focusMap.push(inputNotes);
+        tbody.appendChild(tr);
+      });
+    }
+
+    // 卡车区域渲染
+    function renderTrucks() {
+      const truckList = document.getElementById('truckList');
+      truckList.innerHTML = '';
+      trucks.forEach((truck) => {
+        const card = document.createElement('div');
+        card.className = 'truck-card';
+        // 左侧司机下拉/文本
+        const driverCol = document.createElement('div');
+        driverCol.className = 'truck-driver-col';
+        let isEditingDriver = false;
+        if (truck._editingDriver) isEditingDriver = true;
+        if (isEditingDriver) {
+          const sel = document.createElement('select');
+          sel.className = 'truck-driver-select';
+          const optEmpty = document.createElement('option');
+          optEmpty.value = '';
+          optEmpty.textContent = '--Select Driver--';
+          sel.appendChild(optEmpty);
+          drivers.forEach(d => {
+            const opt = document.createElement('option');
+            opt.value = d.id;
+            opt.textContent = d.name;
+            if (d.id === truck.driver_id) opt.selected = true;
+            sel.appendChild(opt);
+          });
+          // 新增删除选项
+          const optDel = document.createElement('option');
+          optDel.value = '__delete__';
+          optDel.textContent = 'Delete Truck';
+          optDel.style.color = 'red';
+          sel.appendChild(optDel);
+          sel.onblur = async () => {
+            truck._editingDriver = false;
+            renderTrucks();
+          };
+          sel.onchange = async e => {
+            if (e.target.value === '__delete__') {
+              if (confirm('Are you sure you want to delete this truck?')) {
+                // 先删除该卡车所有托盘分配
+                await supabase.from('my_pallet_allocations').delete().eq('truck_id', truck.id);
+                // 再删除卡车
+                await supabase.from('my_trucks').delete().eq('id', truck.id);
+                await refresh();
+                return;
+              } else {
+                truck._editingDriver = false;
+                renderTrucks();
+                return;
+              }
+            }
+            await supabase.from('my_trucks').update({ driver_id: e.target.value }).eq('id', truck.id);
+            truck._editingDriver = false;
+            await refresh();
+          };
+          setTimeout(()=>sel.focus(), 0);
+          driverCol.appendChild(sel);
+        } else {
+          const driverName = drivers.find(d=>d.id===truck.driver_id)?.name || '--';
+          const nameBtn = document.createElement('div');
+          nameBtn.className = 'truck-driver-name';
+          nameBtn.textContent = driverName;
+          nameBtn.onclick = () => {
+            truck._editingDriver = true;
+            renderTrucks();
+          };
+          driverCol.appendChild(nameBtn);
+        }
+        card.appendChild(driverCol);
+        // 右侧板位编号和托盘位块
+        const layoutCol = document.createElement('div');
+        layoutCol.className = 'truck-layout-col';
+        // 计算前仓和后舱的奇偶编号
+        const frontOdd = [], frontEven = [], rearOdd = [], rearEven = [];
+        for (let i = 1; i <= 12; i++) {
+          if (i % 2 === 1) frontOdd.push(i);
+          else frontEven.push(i);
+        }
+        for (let i = 13; i <= 34; i++) {
+          if (i % 2 === 1) rearOdd.push(i);
+          else rearEven.push(i);
+        }
+        // 4行：奇数编号、奇数板位、偶数编号、偶数板位
+        for (let row = 0; row < 4; row++) {
+          const rowDiv = document.createElement('div');
+          rowDiv.className = 'truck-row';
+          // 前仓
+          let arr;
+          if (row === 0) arr = frontOdd;
+          else if (row === 1) arr = frontOdd;
+          else if (row === 2) arr = frontEven;
+          else arr = frontEven;
+          // 后舱
+          let arrRear;
+          if (row === 0) arrRear = rearOdd;
+          else if (row === 1) arrRear = rearOdd;
+          else if (row === 2) arrRear = rearEven;
+          else arrRear = rearEven;
+          // 先渲染前仓，再渲染后舱，保证编号和板位块严格对齐
+          // 先渲染前仓
+          arr.forEach(num => {
+            if (row % 2 === 0) {
+              // 编号
+              const label = document.createElement('div');
+              label.className = 'truck-slot-label';
+              label.style.marginLeft = '2px';
+              label.style.marginRight = '2px';
+              label.textContent = num;
+              rowDiv.appendChild(label);
+            } else {
+              // 板位块
+              const slot = document.createElement('div');
+              slot.className = 'truck-slot';
+              renderSlotContent(slot, truck, num);
+              addSlotDragEvents(slot, truck, num);
+              rowDiv.appendChild(slot);
+            }
+          });
+          // 空格
+          const space = document.createElement('div');
+          space.className = 'truck-space';
+          space.style.width = '32px';
+          rowDiv.appendChild(space);
+          // 再渲染后舱
+          arrRear.forEach(num => {
+            if (row % 2 === 0) {
+              // 编号
+              const label = document.createElement('div');
+              label.className = 'truck-slot-label';
+              label.style.marginLeft = '2px';
+              label.style.marginRight = '2px';
+              label.textContent = num;
+              rowDiv.appendChild(label);
+            } else {
+              // 板位块
+              const slot = document.createElement('div');
+              slot.className = 'truck-slot';
+              renderSlotContent(slot, truck, num);
+              addSlotDragEvents(slot, truck, num);
+              rowDiv.appendChild(slot);
+            }
+          });
+          layoutCol.appendChild(rowDiv);
+        }
+        card.appendChild(layoutCol);
+        truckList.appendChild(card);
+      });
+    }
+
+    // 渲染板位内的托盘块
+    function renderSlotContent(slot, truck, position) {
+      const alloc = allocations.find(a => a.truck_id === truck.id && a.position === position);
+      slot.innerHTML = '';
+      if (alloc) {
+        const task = tasks.find(t => t.id === alloc.task_id);
+        if (task) {
+          const colorIdx = tasks.findIndex(t => t.id === task.id) % 10;
+          const block = document.createElement('div');
+          block.className = 'pallet-block';
+          block.setAttribute('data-color', colorIdx);
+          block.textContent = task.no;
+          block.setAttribute('draggable', 'true');
+          block.ondragstart = e => {
+            e.dataTransfer.setData('text/plain', JSON.stringify({ 
+              allocation_id: alloc.id,
+              task_id: task.id,
+              truck_id: truck.id 
+            }));
+            block.classList.add('dragging');
+          };
+          block.ondragend = e => {
+            block.classList.remove('dragging');
+          };
+          slot.appendChild(block);
+        }
+      }
+    }
+
+    // 拖拽事件绑定
+    function addSlotDragEvents(slot, truck, position) {
+      slot.ondragover = e => {
+        e.preventDefault();
+        slot.classList.add('over');
+      };
+      slot.ondragleave = e => {
+        slot.classList.remove('over');
+      };
+      slot.ondrop = async e => {
+        e.preventDefault();
+        e.stopPropagation(); // 阻止事件冒泡
+        slot.classList.remove('over');
+        const data = e.dataTransfer.getData('text/plain');
+        try {
+          const obj = JSON.parse(data);
+          // 拖自任务表格
+          if (obj.task_id && obj.pallets) {
+            // 从当前位置开始，找到连续的空板位
+            const emptyPositions = [];
+            for (let i = position; i <= 34; i++) {
+              const exist = allocations.find(a => a.truck_id === truck.id && a.position === i);
+              if (!exist) {
+                emptyPositions.push(i);
+                if (emptyPositions.length >= obj.pallets) break;
+              }
+            }
+            // 只分配可用数量
+            const toAssign = Math.min(obj.pallets, emptyPositions.length);
+            const inserts = [];
+            for (let j = 0; j < toAssign; j++) {
+              inserts.push({
+                task_id: obj.task_id,
+                truck_id: truck.id,
+                position: emptyPositions[j]
+              });
+            }
+            if (inserts.length > 0) {
+              await supabase.from('my_pallet_allocations').insert(inserts);
+              await refresh();
+            }
+          }
+          // 拖自卡车板位（移动）
+          else if (obj.allocation_id) {
+            const alloc = allocations.find(a => a.id === obj.allocation_id);
+            if (alloc && (alloc.truck_id !== truck.id || alloc.position !== position)) {
+              // 目标板位无托盘块才允许移动
+              const exist = allocations.find(a => a.truck_id === truck.id && a.position === position);
+              if (!exist) {
+                await supabase.from('my_pallet_allocations')
+                  .update({ truck_id: truck.id, position })
+                  .eq('id', alloc.id);
+                await refresh();
+              }
+            }
+          }
+        } catch {}
+      };
+    }
+
+    // 解绑：拖回任务表格（回收区）
+    document.body.ondragover = e => {
+      if (e.target.classList.contains('pallet-block')) return;
+      e.preventDefault();
+    };
+    document.body.ondrop = async e => {
+      const data = e.dataTransfer.getData('text/plain');
+      try {
+        const obj = JSON.parse(data);
+        if (obj.allocation_id) {
+          // 一次性移除该任务在该卡车上的所有托盘块
+          await supabase.from('my_pallet_allocations')
+            .delete()
+            .match({ truck_id: obj.truck_id, task_id: obj.task_id });
+          await refresh();
+        }
+      } catch {}
+    };
+
+    function focusNext(rowIdx, colIdx) {
+      let flatIdx = (rowIdx) * 7 + (colIdx - 6);
+      if (flatIdx >= 0 && flatIdx < focusMap.length - 1) {
+        focusMap[flatIdx + 1].focus();
+      }
+    }
+    async function addTask() {
+      const no = tasks.length + 1;
+      const today = new Date();
+      today.setDate(today.getDate() + 1);
+      const dateStr = today.toISOString().slice(0,10);
+      const { error } = await supabase.from('my_tasks').insert([{
+        no,
+        date: dateStr,
+        depot: 'MEL-SYD',
+        truck_type: 'B-DOUBLE',
+        pallets: 1
+      }]);
+      if (error) showMsg('Add task failed: ' + error.message, true);
+      await refresh();
+    }
+    async function deleteTask(id) {
+      const { error } = await supabase.from('my_tasks').delete().eq('id', id);
+      if (error) showMsg('Delete failed: ' + error.message, true);
+      await refresh();
+      for (let i = 0; i < tasks.length; i++) {
+        await supabase.from('my_tasks').update({ no: i + 1 }).eq('id', tasks[i].id);
+      }
+      await refresh();
+    }
+    async function updateTask(id, fields) {
+      const { error } = await supabase.from('my_tasks').update(fields).eq('id', id);
+      if (error) showMsg('Update failed: ' + error.message, true);
+      await refresh();
+    }
+    async function addDriver() {
+      const name = document.getElementById('newDriverName').value.trim();
+      if (!name) return showMsg('Driver name required', true);
+      const { error } = await supabase.from('my_drivers').insert([{ name }]);
+      if (error) showMsg('Add driver failed: ' + error.message, true);
+      document.getElementById('newDriverName').value = '';
+      await refresh();
+    }
+    function showMsg(msg, isErr) {
+      const div = document.getElementById('msg');
+      div.textContent = msg;
+      div.style.color = isErr ? 'red' : 'green';
+      setTimeout(() => { div.textContent = ''; }, 2000);
+    }
+    function downloadCSV() {
+      let csv = 'NO.,DATE,DEPOT,TRUCK,DRIVER,CLIENT,ORDER NO.,PALLETS,CONTACT DETAILS,DELIVERY ADDRESS,NOTES\n';
+      tasks.forEach((t, idx) => {
+        const driverName = drivers.find(d => d.id === t.driver_id)?.name || '';
+        csv += [
+          idx + 1,
+          t.date,
+          t.depot,
+          t.truck_type,
+          driverName,
+          t.client,
+          t.order_no,
+          t.pallets,
+          t.contact_details,
+          t.delivery_address,
+          t.notes
+        ].map(x => '"' + (x || '') + '"').join(',') + '\n';
+      });
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'tasks.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+    async function addTruck() {
+      const { error } = await supabase.from('my_trucks').insert([{ driver_id: null }]);
+      if (error) showMsg('Add truck failed: ' + error.message, true);
+      await refresh();
+    }
+    // 初始化
+    refresh();
+  </script>
+</body>
+</html> 
