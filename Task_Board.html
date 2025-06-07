@@ -1,0 +1,2396 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logistics Task Board</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.7/dist/umd/supabase.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.1/dist/tesseract.min.js"></script>
+    <!-- 引入 PaddleOCR.js CDN -->
+    <script src="https://unpkg.com/paddleocr/dist/paddle-ocr.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            min-height: 100vh;
+        }
+
+        .main-container {
+            display: flex;
+            width: 100%;
+            align-items: flex-start;
+        }
+
+        .left-panel {
+            flex: 1;
+            padding: 20px;
+            padding-top: 0;
+        }
+
+        .right-panel {
+            flex: 1;
+            padding: 20px;
+            padding-top: 0;
+        }
+
+        /* 表格样式 */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+            position: relative;
+        }
+
+        .data-table thead {
+            position: sticky;
+            top: 0;
+            background: white;
+            z-index: 10; /* 提高层级防止被内容遮挡 */
+        }
+
+        .data-table th {
+            background-color: #f8f9fa;
+            padding: 8px;
+            text-align: left;
+            border-bottom: 2px solid #dee2e6;
+        }
+
+        .data-table td {
+            padding: 8px;
+            line-height: 32px;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .data-table tbody tr:hover {
+            background-color: #f5f5f5;
+        }
+
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.9em;
+            display: inline-block;
+        }
+
+        /* 状态颜色 */
+        .pending .status-badge { 
+            background: #e0e0e0; 
+            color: #616161; 
+        }
+        .in-transit .status-badge { 
+            background: #bbdefb; 
+            color: #0d47a1; 
+        }
+        .completed .status-badge { 
+            background: #c8e6c9; 
+            color: #1b5e20; 
+        }
+
+        /* 看板样式 */
+        #kanbanBoard {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .swimlane {
+            flex: 1;
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 8px;
+            min-height: 400px;
+        }
+
+        .kanban-card {
+            background: white;
+            margin: 8px 0;
+            padding: 12px;
+            border-radius: 6px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            cursor: move;
+            transition: transform 0.2s;
+        }
+
+        .kanban-card:hover {
+            transform: translateY(-2px);
+        }
+
+        .card-header {
+            font-weight: bold;
+            margin-bottom: 8px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .card-body {
+            font-size: 0.9em;
+            color: #666;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .card-body .info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card-body .info-label {
+            color: #999;
+        }
+
+        .card-body .info-value {
+            font-weight: 500;
+        }
+
+        .due-date {
+            color: #666;
+            font-weight: 500;
+        }
+
+        .swimlane.drag-over {
+            background-color: #f0f0f0;
+        }
+
+        /* 聊天框样式优化 */
+        .chat-container {
+            position: fixed;
+            right: -400px;
+            top: 0;
+            width: 400px;
+            height: 100vh;
+            background: white;
+            box-shadow: -2px 0 5px rgba(0,0,0,0.1);
+            transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            padding: 20px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-header {
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            margin-bottom: 16px;
+            padding-right: 8px;
+        }
+
+        .chat-message {
+            margin-bottom: 8px;
+            padding: 8px 12px;
+            border-radius: 4px;
+            max-width: 80%;
+        }
+
+        .chat-message.user {
+            background: #e3f2fd;
+            margin-left: auto;
+        }
+
+        .chat-message.assistant {
+            background: #f5f5f5;
+        }
+
+        .chat-message.error {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .chat-message.loading {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .chat-input-container {
+            width: 100%;
+        }
+
+        .chat-input {
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        #addPdfGlobalBtn {
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+
+        /* 右侧触发区域 */
+        .chat-trigger {
+            position: fixed;
+            right: 0;
+            top: 0;
+            width: 20px;
+            height: 100vh;
+            z-index: 999;
+        }
+
+        .chat-trigger:hover + .chat-container,
+        .chat-container:hover {
+            right: 0;
+        }
+
+        /* 添加更新动画 */
+        @keyframes dataUpdate {
+            from { background: #e8f5e9; }
+            to { background: transparent; }
+        }
+
+        .updated {
+            animation: dataUpdate 1s ease-out;
+        }
+
+        /* 添加错误提示样式 */
+        .error-message {
+            color: #d32f2f;
+            background: #ffebee;
+            padding: 8px;
+            border-radius: 4px;
+            margin: 8px 0;
+            display: none;
+        }
+
+        /* 添加表格编辑样式 */
+        .data-table td.editable {
+            cursor: pointer;
+            position: relative;
+        }
+
+        .data-table td.editable:hover {
+            background-color: #f0f0f0;
+        }
+
+        .data-table td.editing {
+            padding: 0;
+        }
+
+        .data-table td.editing input,
+        .data-table td.editing select {
+            width: 100%;
+            height: 100%;
+            padding: 8px;
+            border: 1px solid #2196f3;
+            border-radius: 4px;
+            font-size: inherit;
+            font-family: inherit;
+        }
+
+        /* 优化下拉框样式 */
+        .data-table td.editing select {
+            width: 100px;
+            text-align: center;
+            cursor: pointer;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 8px center;
+            background-size: 16px;
+            padding-right: 24px;
+        }
+
+        .data-table td.editing select:focus {
+            outline: none;
+            border-color: #2196f3;
+        }
+
+        /* 优化输入框样式 */
+        .data-table td.editing input[type="number"] {
+            width: 60px;
+            text-align: center;
+        }
+
+        .data-table td.editing input[type="text"] {
+            width: 80px;
+            text-align: center;
+        }
+
+        /* 日期选择器样式 */
+        .date-picker {
+            position: absolute;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            z-index: 1000;
+            padding: 8px;
+        }
+
+        .date-picker .calendar {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+        }
+
+        .date-picker .calendar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .date-picker .calendar-header button {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 4px 8px;
+            color: #666;
+        }
+
+        .date-picker .calendar-header button:hover {
+            color: #2196f3;
+        }
+
+        .date-picker .calendar .day {
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .date-picker .calendar .day:hover {
+            background: #e3f2fd;
+        }
+
+        .date-picker .calendar .day.selected {
+            background: #2196f3;
+            color: white;
+        }
+
+        .date-picker .calendar .day.disabled {
+            color: #ccc;
+            cursor: not-allowed;
+        }
+
+        .date-picker .calendar .weekday {
+            font-size: 12px;
+            color: #666;
+            text-align: center;
+            padding: 4px 0;
+        }
+
+        /* 表头筛选弹窗 */
+        .header-dropdown {
+            border-radius: 6px;
+            min-width: 120px;
+            font-size: 14px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            background: #fff;
+        }
+        .header-dropdown div:hover {
+            background: #f0f0f0;
+        }
+        .header-arrow {
+            margin-left: 4px;
+            color: #888;
+        }
+
+        /* 删除按钮样式优化 */
+        .delete-task-x {
+            display: none;
+            color: #e57373;
+            font-weight: bold;
+            margin-right: 6px;
+            cursor: pointer;
+            font-size: 18px;
+            vertical-align: middle;
+            background: none;
+            border: none;
+            outline: none;
+        }
+        td.editable[data-field="id"]:hover .delete-task-x {
+            display: inline;
+        }
+        /* 保证单号和x对齐 */
+        .id-with-x {
+            display: flex;
+            align-items: center;
+        }
+
+        /* 导航菜单样式 */
+        .nav-trigger {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 10px;
+            height: 100vh;
+            z-index: 1000;
+        }
+        .nav-menu {
+            position: fixed;
+            left: -200px;
+            top: 0;
+            width: 200px;
+            background: #fff;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.1);
+            transition: left 0.3s ease;
+            z-index: 999;
+            padding: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        .nav-menu.show {
+            left: 0;
+        }
+        .nav-menu ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .nav-menu li {
+            padding: 12px 20px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .nav-menu li:hover {
+            background: #f5f5f5;
+        }
+        .nav-menu li.active {
+            background: #F7941D;
+            color: #fff;
+        }
+        .nav-menu li.active:hover {
+            background: #e5851a;
+        }
+    </style>
+</head>
+<body>
+    <!-- 导航菜单 -->
+    <div class="nav-trigger" id="navTrigger"></div>
+    <div class="nav-menu" id="navMenu">
+        <ul>
+            <li onclick="window.location.href='index.html'">Truck</li>
+            <li onclick="window.location.href='work_hour.html'">Work Hour</li>
+            <li class="active" onclick="window.location.href='Task_Board.html'">Task Board</li>
+        </ul>
+    </div>
+
+    <script>
+        // 导航菜单功能
+        const navTrigger = document.getElementById('navTrigger');
+        const navMenu = document.getElementById('navMenu');
+        let menuTimeout;
+
+        navTrigger.addEventListener('mouseenter', () => {
+            clearTimeout(menuTimeout);
+            navMenu.classList.add('show');
+        });
+
+        navTrigger.addEventListener('mousemove', (e) => {
+            navMenu.style.top = e.clientY - 100 + 'px';
+        });
+
+        navMenu.addEventListener('mouseleave', () => {
+            menuTimeout = setTimeout(() => {
+                navMenu.classList.remove('show');
+            }, 300);
+        });
+    </script>
+
+    <div style="height:90px; display: flex; align-items: center; padding: 10px 20px 0 20px; box-sizing: border-box;">
+        <button id="exportTableBtn" style="background:#F7941D;color:#fff;border:none;padding:10px 28px;border-radius:5px;font-size:18px;cursor:pointer;">Export Table</button>
+        <div style="flex:1; display:flex; justify-content:center; align-items:center;">
+            <img src="logo.png" alt="Logo" style="height:50px; max-width:1000px; width:auto; display:block; margin:0 auto;" />
+        </div>
+        <div style="width:120px;"></div>
+    </div>
+    <div class="main-container">
+        <div class="left-panel">
+            <div class="error-message" id="errorMessage"></div>
+            <div style="height:20px;"></div>
+            <table class="data-table" id="logisticsTable">
+                <thead>
+                    <tr>
+                        <th>Tracking#</th>
+                        <th>Status</th>
+                        <th>Pallets</th>
+                        <th>Type</th>
+                        <th>Delivery Scope</th>
+                        <th>Date</th>
+                        <th>Notes</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody"></tbody>
+            </table>
+        </div>
+        <div class="right-panel">
+            <div id="kanbanBoard">
+                <div class="swimlane" data-status="Pending">
+                    <h3>Pending</h3>
+                    <div class="cards-container"></div>
+                </div>
+                <div class="swimlane" data-status="In Transit">
+                    <h3>In Transit</h3>
+                    <div class="cards-container"></div>
+                </div>
+                <div class="swimlane" data-status="Completed">
+                    <h3>Completed</h3>
+                    <div class="cards-container"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="chat-trigger"></div>
+    <div class="chat-container">
+        <div class="chat-header">
+            <h3>AI Assistant</h3>
+        </div>
+        <div class="chat-messages" id="chatMessages"></div>
+        <div class="chat-input-container" style="display:flex;flex-direction:column;align-items:center;gap:16px;">
+            <textarea class="chat-input" id="command-input" placeholder="Please enter a command, e.g.: Create 2 pallets Pickup to NSW 25/12" style="width:100%;height:100px;resize:vertical;font-size:15px;padding:12px 10px;box-sizing:border-box;"></textarea>
+            <div style="display:flex;flex-direction:row;gap:16px;justify-content:center;width:100%;">
+                <button id="addPdfGlobalBtn" style="background:#F7941D;color:#fff;border:none;padding:12px 0;border-radius:5px;font-size:16px;cursor:pointer;width:180px;max-width:180px;">Add PDF</button>
+                <button id="identifyImageBtn" style="background:#F7941D;color:#fff;border:none;padding:12px 0;border-radius:5px;font-size:16px;cursor:pointer;width:180px;max-width:180px;">Identify Image</button>
+            </div>
+            <input type="file" id="pdfFileInput" accept="application/pdf" style="display:none;" />
+        </div>
+    </div>
+
+    <script>
+        // == Supabase 配置与初始化 ==
+        const SUPABASE_URL = 'https://epxnzvmxmtcacdmdeezz.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVweG56dm14bXRjYWNkbWRlZXp6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg4NTkyMjQsImV4cCI6MjA2NDQzNTIyNH0.D0N3G4DO7at7TH_VwoW1PwOZMkrD4tKJo0bcepAb5v8';
+        const SUPABASE_BUCKET = 'renwukanbanpdf';
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // 常量定义
+        const VALID_STATUS = ['Pending', 'In Transit', 'Completed'];
+        const VALID_TYPES = ['Pickup', 'Delivery'];
+        const VALID_DELIVERY_SCOPES = ['NSW', 'VIC', 'SA', 'QLD'];
+
+        // 示例数据结构
+        const sampleTasks = [
+            {
+                id: "TRK001",
+                status: "Pending",
+                pallets: 2,
+                type: "Delivery",
+                delivery_scope: "",
+                date: "25/12"
+            },
+            {
+                id: "TRK002",
+                status: "In Transit",
+                pallets: 4,
+                type: "Pickup",
+                delivery_scope: "NSW",
+                date: "30/11"
+            },
+            {
+                id: "TRK003",
+                status: "Pending",
+                pallets: 1,
+                type: "Pickup",
+                delivery_scope: "VIC",
+                date: "01/01"
+            }
+        ];
+
+        // 数据验证函数
+        function validateTask(task) {
+            const validScope = (task.type === 'Pickup') ? VALID_DELIVERY_SCOPES.includes(task.delivery_scope) : (!task.delivery_scope || task.delivery_scope === '');
+            return VALID_STATUS.includes(task.status) &&
+                   VALID_TYPES.includes(task.type) &&
+                   validScope &&
+                   typeof task.id === 'string' && task.id.trim() !== '' &&
+                   /^\d{2}\/\d{2}$/.test(task.date);
+        }
+
+        // 生成唯一ID
+        function generateUniqueId() {
+            const data = safeGetTasks();
+            const maxId = data.reduce((max, task) => {
+                const num = parseInt(task.id.replace('TRK', ''));
+                return isNaN(num) ? max : Math.max(max, num);
+            }, 0);
+            const newId = `TRK${String(maxId + 1).padStart(3, '0')}`;
+            console.log('generateUniqueId被调用，返回:', newId);
+            return newId;
+        }
+
+        // 错误提示
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 3000);
+        }
+
+        // 触发数据更新
+        function triggerDataUpdate() {
+            window.dispatchEvent(new Event('storage'));
+            localStorage.setItem('lastUpdate', Date.now());
+        }
+
+        // 统一更新方法
+        async function updateTask(taskId, newData) {
+            let tasks = await loadTasksFromSupabase();
+            const index = tasks.findIndex(t => t.id === taskId);
+            if (index > -1) {
+                const updatedTask = { ...tasks[index], ...newData };
+                if (updatedTask.id) {
+                    await saveTaskToSupabase(updatedTask);
+                    await initializeDataSupabase();
+                    return true;
+                } else {
+                    showError('Data validation failed, missing key fields');
+                }
+            }
+            return false;
+        }
+
+        // == 安全警告 ==
+        // 此实现仅适用于本地测试，不可用于生产环境！
+        // 正式环境必须使用后端代理
+
+        // 增强自然语言日期解析，支持下周一等
+        function parseNaturalDate(dateStr) {
+            const now = new Date();
+            let target = new Date(now);
+            const weekMap = {
+                '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '日': 0, '天': 0
+            };
+            if (/今天/.test(dateStr)) {
+                // 今天
+            } else if (/明天/.test(dateStr)) {
+                target.setDate(now.getDate() + 1);
+            } else if (/后天/.test(dateStr)) {
+                target.setDate(now.getDate() + 2);
+            } else if (/下周([一二三四五六日天])/.test(dateStr)) {
+                const match = dateStr.match(/下周([一二三四五六日天])/);
+                if (match) {
+                    const targetDay = weekMap[match[1]];
+                    const currentDay = now.getDay();
+                    let addDays = (7 - currentDay + targetDay) % 7;
+                    if (addDays === 0) addDays = 7;
+                    target.setDate(now.getDate() + addDays);
+                }
+            } else {
+                // 直接返回原始
+                return dateStr;
+            }
+            const dd = String(target.getDate()).padStart(2, '0');
+            const mm = String(target.getMonth() + 1).padStart(2, '0');
+            return `${dd}/${mm}`;
+        }
+
+        // 从用户输入中提取单号
+        function extractIdFromInput(input) {
+            // 匹配连续字母数字，长度4及以上
+            const match = input.match(/[A-Za-z0-9]{4,}/);
+            return match ? match[0] : '';
+        }
+
+        // 工具函数：获取今天日期DD/MM
+        function getTodayDateStr() {
+            const now = new Date();
+            const dd = String(now.getDate()).padStart(2, '0');
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            return `${dd}/${mm}`;
+        }
+
+        // 在外部声明全局finishEditing变量
+        let currentFinishEditing = null;
+
+        // 自然语言处理器
+        class ChatAssistant {
+            static async parseCommand(input) {
+                // 本地兜底正则提取
+                function localParse(input) {
+                    let action = null;
+                    if (/删除|移除/.test(input)) {
+                        action = 'DELETE';
+                    } else if (/完成|已完成/.test(input)) {
+                        action = 'UPDATE_STATUS';
+                    } else if (/在途|在运输|运输中|in transit/i.test(input)) {
+                        action = 'UPDATE_STATUS';
+                    } else if (/修改|改为|更改|更新/.test(input)) {
+                        action = 'UPDATE';
+                    } else if (/查找|筛选|过滤|找|显示/.test(input)) {
+                        action = 'FILTER';
+                    } else {
+                        action = 'CREATE';
+                    }
+
+                    const idMatch = input.match(/([A-Za-z0-9]{6,})/);
+                    const id = idMatch ? idMatch[1] : null;
+
+                    let pallets = null;
+                    const palletsMatch = input.match(/(\d+)(?:托盘|托|P|pallets?)/i);
+                    if (palletsMatch) {
+                        pallets = Number(palletsMatch[1]);
+                    }
+
+                    let type = null;
+                    if (/提货|自提|pickup/i.test(input)) {
+                        type = 'Pickup';
+                    } else if (/送货|配送|delivery/i.test(input)) {
+                        type = 'Delivery';
+                    }
+
+                    let delivery_scope = null;
+                    // 只允许NSW/VIC/SA，且只要出现NSW/VIC/SA就为Pickup
+                    if (/NSW/i.test(input)) {
+                        delivery_scope = 'NSW';
+                        type = 'Pickup';
+                    } else if (/VIC/i.test(input)) {
+                        delivery_scope = 'VIC';
+                        type = 'Pickup';
+                    } else if (/SA/i.test(input)) {
+                        delivery_scope = 'SA';
+                        type = 'Pickup';
+                    }
+
+                    let date = null;
+                    const dateMatch = input.match(/(\d{2}\/\d{2}|\d+号|明天|今天|后天|下周[一二三四五六日天])/);
+                    if (dateMatch) {
+                        date = dateMatch[1];
+                    }
+
+                    let status = null;
+                    if (/完成|已完成/.test(input)) {
+                        status = 'Completed';
+                    } else if (/在途|在运输|运输中|in transit/i.test(input)) {
+                        status = 'In Transit';
+                    } else if (/异常|问题|issue/i.test(input)) {
+                        status = 'Issue';
+                    } else if (/待处理|pending/i.test(input)) {
+                        status = 'Pending';
+                    }
+                    if (action === 'CREATE' && !status) status = 'Pending';
+
+                    let filterType = null, value = null;
+                    if (action === 'FILTER') {
+                        if (/自提|pickup/i.test(input)) {
+                            filterType = 'type';
+                            value = 'Pickup';
+                        } else if (/送货|delivery/i.test(input)) {
+                            filterType = 'type';
+                            value = 'Delivery';
+                        } else if (/NSW/i.test(input)) {
+                            filterType = 'delivery_scope';
+                            value = 'NSW';
+                        } else if (/VIC/i.test(input)) {
+                            filterType = 'delivery_scope';
+                            value = 'VIC';
+                        } else if (/SA/i.test(input)) {
+                            filterType = 'delivery_scope';
+                            value = 'SA';
+                        } else if (/在途|in transit/i.test(input)) {
+                            filterType = 'status';
+                            value = 'In Transit';
+                        } else if (/完成|已完成|completed/i.test(input)) {
+                            filterType = 'status';
+                            value = 'Completed';
+                        } else if (/异常|问题|issue/i.test(input)) {
+                            filterType = 'status';
+                            value = 'Issue';
+                        } else if (/待处理|pending/i.test(input)) {
+                            filterType = 'status';
+                            value = 'Pending';
+                        }
+                    }
+
+                    const missingFields = [];
+                    if (action === 'CREATE') {
+                        if (!id) missingFields.push('id');
+                        if (!pallets) missingFields.push('pallets');
+                        if (!type) missingFields.push('type');
+                        if (type === 'Pickup' && !delivery_scope) missingFields.push('delivery_scope');
+                        if (!date) missingFields.push('date');
+                    } else if (action === 'UPDATE_STATUS') {
+                        if (!id) missingFields.push('id');
+                        if (!status) missingFields.push('status');
+                    } else if (action === 'UPDATE') {
+                        if (!id) missingFields.push('id');
+                        if (!pallets && !type && !delivery_scope && !date) missingFields.push('updateField');
+                    } else if (action === 'DELETE') {
+                        if (!id) missingFields.push('id');
+                    } else if (action === 'FILTER') {
+                        if (!filterType) missingFields.push('filterType');
+                        if (!value) missingFields.push('value');
+                    }
+
+                    return {
+                        action,
+                        id,
+                        pallets,
+                        type,
+                        delivery_scope,
+                        status,
+                        date,
+                        filterType,
+                        value,
+                        missingFields
+                    };
+                }
+
+                // 优先API，失败兜底
+                try {
+                    const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer sk-0cab5429310d438487895671c2fbc943'
+                        },
+                        body: JSON.stringify({
+                            model: "deepseek-chat",
+                            messages: [{
+                                role: "system",
+                                content: `You are a logistics assistant. Your job is to extract structured JSON from user input in Chinese or English, for logistics task creation, update, delete, status update, or filtering.\nAll output must be in strict JSON, no explanation, no markdown, no code block.\nDo not generate or modify tracking numbers, just extract the original tracking number from user input as 'id'.\nIf you cannot extract all required fields, fill with null and add a 'missingFields' array listing missing ones.\n\nFor delivery scope:\n- Only allow delivery_scope to be one of [NSW, VIC, SA].\n- If user input mentions NSW/VIC/SA, type must be Pickup and delivery_scope must be the corresponding value.\n- If user input does not mention delivery_scope, set it to null.\n- If type is Delivery, delivery_scope must be null or empty.\n\nJSON format:\n{\n  "action": "CREATE/UPDATE_STATUS/UPDATE/DELETE/FILTER",\n  "id?": "原文中的单号",\n  "pallets?": number,\n  "type?": "Pickup/Delivery",\n  "delivery_scope?": "NSW/VIC/SA",\n  "status?": "Pending/In Transit/Completed/Issue",\n  "date?": "DD/MM或自然语言",\n  "filterType?": "status/type/delivery_scope",\n  "value?": "...",\n  "missingFields?": ["field1", ...]\n}\n\nExamples:\n- "明天TO1343124，10P自提NSW" -> {"action": "CREATE", "id": "TO1343124", "pallets": 10, "type": "Pickup", "delivery_scope": "NSW", "date": "明天", "missingFields": []}\n- "25号送2托盘" -> {"action": "CREATE", "pallets": 2, "type": "Delivery", "delivery_scope": null, "date": "25/xx", "missingFields": ["id"]}\n- "TRK001完成" -> {"action": "UPDATE_STATUS", "id": "TRK001", "status": "Completed", "missingFields": []}\n- "查找NSW的自提任务" -> {"action": "FILTER", "filterType": "delivery_scope", "value": "NSW", "missingFields": []}\n- "TRK002改为在途" -> {"action": "UPDATE_STATUS", "id": "TRK002", "status": "In Transit", "missingFields": []}\n- "新建3托盘Pickup到VIC 30/12" -> {"action": "CREATE", "pallets": 3, "type": "Pickup", "delivery_scope": "VIC", "date": "30/12", "missingFields": ["id"]}\n- "TO2452，10P下周一自提SA" -> {"action": "CREATE", "id": "TO2452", "pallets": 10, "type": "Pickup", "delivery_scope": "SA", "date": "下周一", "missingFields": []}\n- "删除TO2435546这个物流" -> {"action": "DELETE", "id": "TO2435546", "missingFields": []}\n- "修改TO2435546为明天自提VIC" -> {"action": "UPDATE", "id": "TO2435546", "date": "明天", "type": "Pickup", "delivery_scope": "VIC", "missingFields": []}\n- "TO2435546托盘数改为8" -> {"action": "UPDATE", "id": "TO2435546", "pallets": 8, "missingFields": []}`
+                            }, {
+                                role: "user",
+                                content: input
+                            }]
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(`API Error: ${data.error?.message || 'Unknown error'}`);
+                    }
+
+                    if (!data.choices?.[0]?.message?.content) {
+                        throw new Error('Invalid API response format');
+                    }
+
+                    let content = data.choices[0].message.content;
+                    content = content.replace(/```json|```/gi, '').trim();
+                    const firstBrace = content.indexOf('{');
+                    const lastBrace = content.lastIndexOf('}');
+                    if (firstBrace !== -1 && lastBrace !== -1) {
+                        content = content.substring(firstBrace, lastBrace + 1);
+                    }
+                    const parsedContent = JSON.parse(content);
+                    // 本地修正：如果type为Delivery但delivery_scope为NSW/VIC/SA，自动修正为Pickup
+                    if (parsedContent.type === 'Delivery' && ['NSW','VIC','SA'].includes(parsedContent.delivery_scope)) {
+                        parsedContent.type = 'Pickup';
+                    }
+                    if (!parsedContent.action) {
+                        throw new Error('Invalid command format: missing action');
+                    }
+                    return parsedContent;
+                } catch (error) {
+                    showChatMessage(`API解析失败，已自动用本地规则解析：${error.message}`, 'error');
+                    return localParse(input);
+                }
+            }
+        }
+
+        // 显示聊天消息
+        function showChatMessage(text, type = 'assistant') {
+            const messagesContainer = document.getElementById('chatMessages');
+            const message = document.createElement('div');
+            message.className = `chat-message ${type}`;
+            message.textContent = text;
+            messagesContainer.appendChild(message);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        // 集成到聊天框
+        document.getElementById('command-input').addEventListener('keypress', async (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { // 支持多行输入，Shift+Enter换行
+                e.preventDefault();
+                const input = e.target.value.trim();
+                if (!input) return;
+                
+                e.target.value = '';
+                showChatMessage(input, 'user');
+                showChatMessage('Processing...', 'loading');
+                
+                // 按行分割，过滤空行
+                const lines = input.split('\n').map(line => line.trim()).filter(line => line);
+
+                let successCount = 0;
+                let failCount = 0;
+                for (const line of lines) {
+                    try {
+                        const result = await ChatAssistant.parseCommand(line);
+                        if (result.error) throw new Error(result.error);
+
+                    if (result.action === 'CREATE') {
+                        if (!result.status) result.status = 'Pending';
+                            const userId = extractIdFromInput(line);
+                        let parsedDate = result.date ? parseNaturalDate(result.date) : '';
+                        if (!parsedDate) parsedDate = getTodayDateStr();
+                        const newTask = {
+                            id: userId || result.id || generateUniqueId(),
+                            status: result.status,
+                                pallets: Number(result.pallets) || 0,
+                            type: result.type || '',
+                                delivery_scope: result.delivery_scope || '',
+                            date: parsedDate
+                        };
+                            // == 切换为 Supabase 数据流 ==
+                        if (newTask.id) {
+                                await saveTaskToSupabase(newTask);
+                                await initializeDataSupabase(); // 刷新渲染
+                            if (validateTask(newTask)) {
+                                    showChatMessage(`任务创建成功: ${newTask.id}`, 'assistant');
+                            } else {
+                                    showChatMessage(`部分字段缺失，已记录可识别信息: ${newTask.id}`, 'assistant');
+                            }
+                                successCount++;
+                        } else {
+                                throw new Error('缺少关键字段，未能创建');
+                            }
+                        } else {
+                            // 其它类型指令可按需扩展
+                            showChatMessage(`暂不支持批量处理该类型指令: ${line}`, 'error');
+                            failCount++;
+                        }
+                    } catch (err) {
+                        showChatMessage(`指令处理失败: ${line}，原因：${err.message}`, 'error');
+                        failCount++;
+                    }
+                }
+                showChatMessage(`批量处理完成，成功${successCount}条，失败${failCount}条。`, 'assistant');
+            }
+        });
+
+        // 监听数据变化
+        window.addEventListener('storage', () => {
+            renderTable();
+            renderKanban();
+        });
+
+        // 筛选和排序状态
+        let currentSort = { field: null, asc: true };
+        let currentFilter = { status: '', type: '', delivery_scope: '' };
+
+        // == 表头筛选弹窗 ==
+        function createHeaderDropdown(options, currentValue, onSelect) {
+            const dropdown = document.createElement('div');
+            dropdown.className = 'header-dropdown';
+            dropdown.style.position = 'absolute';
+            dropdown.style.background = '#fff';
+            dropdown.style.border = '1px solid #ddd';
+            dropdown.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)';
+            dropdown.style.zIndex = 100;
+            dropdown.style.minWidth = '120px';
+            dropdown.style.padding = '4px 0';
+            options.forEach(opt => {
+                const item = document.createElement('div');
+                item.textContent = opt.label;
+                item.style.padding = '6px 16px';
+                item.style.cursor = 'pointer';
+                if (opt.value === currentValue) {
+                    item.style.background = '#e3f2fd';
+                }
+                item.onclick = () => {
+                    onSelect(opt.value);
+                    dropdown.remove();
+                };
+                dropdown.appendChild(item);
+            });
+            // 点击外部关闭
+            setTimeout(() => {
+                document.addEventListener('mousedown', function handler(e) {
+                    if (!dropdown.contains(e.target)) {
+                        dropdown.remove();
+                        document.removeEventListener('mousedown', handler);
+                    }
+                });
+            }, 10);
+            return dropdown;
+        }
+
+        // == 优化表头排序和筛选 ==
+        function renderTableHeaderSortAndFilter() {
+            const table = document.getElementById('logisticsTable');
+            const ths = table.querySelectorAll('thead tr:first-child th');
+            ths.forEach((th, idx) => {
+                // Status筛选
+                if (th.textContent.includes('Status')) {
+                    th.style.position = 'relative';
+                    th.innerHTML = 'Status <span class="header-arrow" style="font-size:12px;cursor:pointer;">▼</span>';
+                    const arrow = th.querySelector('.header-arrow');
+                    arrow.onclick = (e) => {
+                        e.stopPropagation();
+                        const rect = th.getBoundingClientRect();
+                        const dropdown = createHeaderDropdown([
+                            { label: 'All', value: '' },
+                            { label: 'Pending', value: 'Pending' },
+                            { label: 'In Transit', value: 'In Transit' },
+                            { label: 'Completed', value: 'Completed' }
+                        ], currentFilter.status, (val) => {
+                            currentFilter.status = val;
+                            renderTableSupabase(window._lastSupabaseTasks || [], getPdfMap());
+                        });
+                        dropdown.style.left = rect.left + 'px';
+                        dropdown.style.top = (rect.bottom + window.scrollY) + 'px';
+                        document.body.appendChild(dropdown);
+                    };
+                }
+                // Type筛选
+                else if (th.textContent.includes('Type')) {
+                    th.style.position = 'relative';
+                    th.innerHTML = 'Type <span class="header-arrow" style="font-size:12px;cursor:pointer;">▼</span>';
+                    const arrow = th.querySelector('.header-arrow');
+                    arrow.onclick = (e) => {
+                        e.stopPropagation();
+                        const rect = th.getBoundingClientRect();
+                        const dropdown = createHeaderDropdown([
+                            { label: 'All', value: '' },
+                            { label: 'Pickup', value: 'Pickup' },
+                            { label: 'Delivery', value: 'Delivery' }
+                        ], currentFilter.type, (val) => {
+                            currentFilter.type = val;
+                            renderTableSupabase(window._lastSupabaseTasks || [], getPdfMap());
+                        });
+                        dropdown.style.left = rect.left + 'px';
+                        dropdown.style.top = (rect.bottom + window.scrollY) + 'px';
+                        document.body.appendChild(dropdown);
+                    };
+                }
+                // Delivery Scope筛选
+                else if (th.textContent.includes('Delivery Scope')) {
+                    th.style.position = 'relative';
+                    th.innerHTML = 'Delivery Scope <span class="header-arrow" style="font-size:12px;cursor:pointer;">▼</span>';
+                    const arrow = th.querySelector('.header-arrow');
+                    arrow.onclick = (e) => {
+                        e.stopPropagation();
+                        const rect = th.getBoundingClientRect();
+                        const dropdown = createHeaderDropdown([
+                            { label: 'All', value: '' },
+                            { label: 'NSW', value: 'NSW' },
+                            { label: 'VIC', value: 'VIC' },
+                            { label: 'SA', value: 'SA' }
+                        ], currentFilter.delivery_scope, (val) => {
+                            currentFilter.delivery_scope = val;
+                            renderTableSupabase(window._lastSupabaseTasks || [], getPdfMap());
+                        });
+                        dropdown.style.left = rect.left + 'px';
+                        dropdown.style.top = (rect.bottom + window.scrollY) + 'px';
+                        document.body.appendChild(dropdown);
+                    };
+                }
+                // Date排序
+                else if (th.textContent.includes('Date')) {
+                    th.style.cursor = 'pointer';
+                    th.title = '点击排序';
+                    th.innerHTML = 'Date <span style="font-size:12px;">' + (currentSort.field === 'date' ? (currentSort.asc ? '↑' : '↓') : '') + '</span>';
+                    th.onclick = () => {
+                        if (currentSort.field === 'date') {
+                            currentSort.asc = !currentSort.asc;
+                        } else {
+                            currentSort.field = 'date';
+                            currentSort.asc = true;
+                        }
+                        renderTableSupabase(window._lastSupabaseTasks || [], getPdfMap());
+                    };
+                }
+            });
+        }
+
+        // 渲染表格
+        function renderTable() {
+            let tasks = safeGetTasks();
+            if (currentFilter.status) {
+                tasks = tasks.filter(task => task.status === currentFilter.status);
+            }
+            if (currentFilter.type) {
+                tasks = tasks.filter(task => task.type === currentFilter.type);
+            }
+            if (currentFilter.delivery_scope) {
+                tasks = tasks.filter(task => task.type === 'Pickup' && task.delivery_scope === currentFilter.delivery_scope);
+            }
+            if (currentSort.field === 'date') {
+                tasks = tasks.slice().sort((a, b) => {
+                    const [ad, am] = (a.date || '').split('/').map(Number);
+                    const [bd, bm] = (b.date || '').split('/').map(Number);
+                    if (am !== bm) return currentSort.asc ? am - bm : bm - am;
+                    return currentSort.asc ? ad - bd : bd - ad;
+                });
+            }
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+            tasks.forEach(task => {
+                if (!task.id) return;
+                let status = VALID_STATUS.includes(task.status) ? task.status : 'Pending';
+                let type = VALID_TYPES.includes(task.type) ? task.type : 'Pickup';
+                let delivery_scope = (type === 'Pickup' && VALID_DELIVERY_SCOPES.includes(task.delivery_scope)) ? task.delivery_scope : '';
+                const row = document.createElement('tr');
+                row.dataset.id = task.id;
+                row.dataset.status = status;
+                const statusClass = status.toLowerCase().replace(' ', '-');
+                // PDF图标判断
+                let pdfIconHtml = '';
+                if (getPdfMap() && getPdfMap()[task.id]) {
+                    pdfIconHtml = `<span class="pdf-download-icon" data-id="${task.id}" title="Download PDF" style="cursor:pointer;font-size:18px;color:#F7941D;margin-left:8px;vertical-align:middle;">&#8595;</span>`;
+                } else {
+                    pdfIconHtml = `<span class="pdf-upload-icon" data-id="${task.id}" title="Add PDF" style="cursor:pointer;font-size:20px;color:#888;margin-left:8px;vertical-align:middle;">+</span>`;
+                }
+                row.innerHTML = `
+                    <td class="editable" data-field="id">
+                        <span class="id-with-x">
+                            <button class="delete-task-x" data-id="${task.id}" title="Delete">×</button>
+                            <span>${task.id}</span>
+                            ${pdfIconHtml}
+                        </span>
+                    </td>
+                    <td class="editable" data-field="status">
+                        <span class="status-badge">${status}</span>
+                    </td>
+                    <td class="editable" data-field="pallets">${task.pallets || ''}</td>
+                    <td class="editable" data-field="type">${type}</td>
+                    <td class="editable" data-field="delivery_scope">${type === 'Pickup' ? (delivery_scope || '') : ''}</td>
+                    <td class="editable" data-field="date">${task.date || ''}</td>
+                    <td class="editable" data-field="notes">${task.notes || ''}</td>
+                `;
+                row.className = statusClass;
+                tbody.appendChild(row);
+            });
+            renderTableHeaderSortAndFilter();
+        }
+
+        // 添加日期选择器功能
+        function createDatePicker(cell, currentDate, onSelect) {
+            const picker = document.createElement('div');
+            picker.className = 'date-picker';
+            // 解析当前日期，兼容空值和非标准格式
+            let day = 1, month = (new Date()).getMonth() + 1;
+            if (/^\d{2}\/\d{2}$/.test(currentDate)) {
+                [day, month] = currentDate.split('/').map(Number);
+            } else {
+                const now = new Date();
+                day = now.getDate();
+                month = now.getMonth() + 1;
+            }
+            const date = new Date();
+            date.setMonth(month - 1);
+            date.setDate(day);
+            // 生成日历
+            function generateCalendar(date) {
+                const year = date.getFullYear();
+                const month = date.getMonth();
+                const firstDay = new Date(year, month, 1);
+                const lastDay = new Date(year, month + 1, 0);
+                const daysInMonth = lastDay.getDate();
+                const startingDay = firstDay.getDay();
+                const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+                const months = ['一月', '二月', '三月', '四月', '五月', '六月', 
+                              '七月', '八月', '九月', '十月', '十一月', '十二月'];
+                picker.innerHTML = `
+                    <div class="calendar-header">
+                        <button class="prev-month">&lt;</button>
+                        <span>${months[month]} ${year}</span>
+                        <button class="next-month">&gt;</button>
+                    </div>
+                    <div class="calendar">
+                        ${weekdays.map(day => `<div class="weekday">${day}</div>`).join('')}
+                        ${Array(startingDay).fill('<div></div>').join('')}
+                        ${Array(daysInMonth).fill(0).map((_, i) => {
+                            const day = i + 1;
+                            const isSelected = day === date.getDate();
+                            return `<div class="day ${isSelected ? 'selected' : ''}" data-day="${day}">${day}</div>`;
+                        }).join('')}
+                    </div>
+                `;
+                picker.querySelector('.prev-month').addEventListener('click', () => {
+                    date.setMonth(date.getMonth() - 1);
+                    generateCalendar(date);
+                });
+                picker.querySelector('.next-month').addEventListener('click', () => {
+                    date.setMonth(date.getMonth() + 1);
+                    generateCalendar(date);
+                });
+                picker.querySelectorAll('.day').forEach(day => {
+                    day.addEventListener('click', () => {
+                        const selectedDay = day.dataset.day;
+                        const formattedDate = `${String(selectedDay).padStart(2, '0')}/${String(month + 1).padStart(2, '0')}`;
+                        onSelect(formattedDate);
+                        picker.remove();
+                    });
+                });
+            }
+            generateCalendar(date);
+            return picker;
+        }
+
+        // 修改表格编辑功能
+        document.getElementById('tableBody').addEventListener('click', async (e) => {
+            const cell = e.target.closest('td.editable');
+            if (!cell) return;
+            const row = cell.closest('tr');
+            const taskId = row.dataset.id;
+            const field = cell.dataset.field;
+            const currentValue = cell.textContent.trim();
+            if (cell.classList.contains('editing')) return;
+            let input;
+            if (field === 'id') {
+                // 单号可编辑，输入框宽度覆盖整个单元格，内容去除空格
+                const originalContent = cell.innerHTML;
+                const idSpan = cell.querySelector('span.id-with-x span');
+                const oldId = idSpan ? idSpan.textContent.trim() : currentValue.trim();
+                input = document.createElement('input');
+                input.type = 'text';
+                input.value = oldId;
+                input.placeholder = 'Tracking#';
+                input.maxLength = 32;
+                input.style.width = '100%';
+                input.style.boxSizing = 'border-box';
+                // 编辑时隐藏所有按钮
+                cell.innerHTML = '';
+                cell.appendChild(input);
+                cell.classList.add('editing');
+                input.focus();
+                input.select();
+                input.addEventListener('keydown', async (e2) => {
+                    if (e2.key === 'Enter') {
+                        const newId = input.value.trim();
+                        if (!newId) {
+                            showError('单号不能为空');
+                            return;
+                        }
+                        // 校验唯一性
+                        let tasks = await loadTasksFromSupabase();
+                        if (tasks.some(t => t.id === newId && t.id !== taskId)) {
+                            showError('单号已存在，不能重复');
+                            return;
+                        }
+                        // 获取原任务内容
+                        let task = tasks.find(t => t.id === taskId);
+                        if (task) {
+                            // 先删除原有id
+                            await deleteTaskFromSupabase(taskId);
+                            // 用新id插入新行（保留原有其他字段）
+                            const newTask = { ...task, id: newId };
+                            await saveTaskToSupabase(newTask);
+                            // 如果有PDF绑定，更新pdf_maps表
+                            const pdfMap = await getPdfMap();
+                            if (pdfMap[taskId]) {
+                                await deletePdfMapFromSupabase(taskId);
+                                await savePdfMapToSupabase(newId, pdfMap[taskId]);
+                            }
+                            await initializeDataSupabase();
+                        }
+                    } else if (e2.key === 'Escape') {
+                        cell.classList.remove('editing');
+                        cell.innerHTML = originalContent;
+                    }
+                });
+                input.addEventListener('blur', () => {
+                    setTimeout(() => {
+                        if (!cell.contains(document.activeElement)) {
+                            cell.classList.remove('editing');
+                            cell.innerHTML = originalContent;
+                        }
+                    }, 100);
+                });
+            } else if (field === 'status' || field === 'type' || field === 'delivery_scope') {
+                // delivery_scope 只允许 type 为 Pickup 时可编辑
+                if (field === 'delivery_scope') {
+                    const rowType = row.querySelector('[data-field="type"]').textContent.trim();
+                    if (rowType !== 'Pickup') {
+                        // 不可编辑
+                        return;
+                    }
+                }
+                input = document.createElement('select');
+                const options = field === 'status' ? VALID_STATUS : 
+                             field === 'type' ? VALID_TYPES : 
+                             VALID_DELIVERY_SCOPES;
+                const safeValue = options.includes(currentValue) ? currentValue : options[0];
+                options.forEach(option => {
+                    const opt = document.createElement('option');
+                    opt.value = option;
+                    opt.textContent = option;
+                    if (option === safeValue) opt.selected = true;
+                    input.appendChild(opt);
+                });
+                input.addEventListener('change', () => {
+                    const newValue = input.value;
+                    const newData = { [field]: newValue };
+                    // 如果是type变为Delivery，自动清空delivery_scope
+                    if (field === 'type' && newValue === 'Delivery') {
+                        newData['delivery_scope'] = '';
+                    }
+                    updateTask(taskId, newData);
+                    cell.classList.remove('editing');
+                    if (field === 'status') {
+                        cell.innerHTML = `<span class=\"status-badge\">${newValue}</span>`;
+                    } else {
+                        cell.innerHTML = `<span class=\"info-value\">${newValue}</span>`;
+                    }
+                });
+                input.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                });
+            } else if (field === 'pallets') {
+                input = document.createElement('input');
+                input.type = 'number';
+                input.min = '1';
+                input.value = currentValue;
+            } else if (field === 'date') {
+                input = document.createElement('input');
+                input.type = 'text';
+                input.readOnly = true;
+                input.value = currentValue;
+                input.placeholder = 'DD/MM';
+                let picker = null;
+                // 定义finishEditing并赋值到全局
+                const originalContent = cell.innerHTML;
+                function finishEditing() {
+                    cell.classList.remove('editing');
+                    cell.innerHTML = originalContent;
+                }
+                currentFinishEditing = finishEditing;
+                picker = createDatePicker(cell, currentValue, (newDate) => {
+                    const newData = { date: newDate };
+                    updateTask(taskId, newData);
+                    cell.classList.remove('editing');
+                    cell.innerHTML = `<span class=\"info-value\">${newDate}</span>`;
+                    currentFinishEditing = null;
+                    if (picker && picker.parentNode) picker.parentNode.removeChild(picker);
+                });
+                input.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const rect = cell.getBoundingClientRect();
+                    picker.style.top = `${rect.bottom + window.scrollY}px`;
+                    picker.style.left = `${rect.left + window.scrollX}px`;
+                    document.body.appendChild(picker);
+                });
+                // 只保留带picker判断的blur事件，调用全局currentFinishEditing
+                input.addEventListener('blur', (e) => {
+                    setTimeout(() => {
+                        const active = document.activeElement;
+                        if (picker && picker.contains(active)) {
+                            return;
+                        }
+                        if (!cell.contains(active)) {
+                            if (typeof currentFinishEditing === 'function') currentFinishEditing();
+                            currentFinishEditing = null;
+                        }
+                    }, 100);
+                });
+            } else if (field === 'notes') {
+                input = document.createElement('input');
+                input.type = 'text';
+                input.value = currentValue;
+                input.placeholder = 'Notes';
+            } else {
+                return;
+            }
+            const originalContent = cell.innerHTML;
+            cell.innerHTML = '';
+            cell.appendChild(input);
+            cell.classList.add('editing');
+            input.focus();
+            function finishEditing() {
+                if (field === 'status' || field === 'type' || field === 'delivery_scope') return;
+                const newValue = input.value.trim();
+                let isValid = true;
+                if (field === 'pallets' && (isNaN(newValue) || newValue < 1)) {
+                    showError('托盘数量必须大于0');
+                    isValid = false;
+                }
+                if (isValid) {
+                    const newData = { [field]: newValue };
+                    updateTask(taskId, newData);
+                }
+                cell.classList.remove('editing');
+                cell.innerHTML = originalContent;
+            }
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    finishEditing();
+                } else if (e.key === 'Escape') {
+                    cell.classList.remove('editing');
+                    cell.innerHTML = originalContent;
+                }
+            });
+            input.addEventListener('blur', (e) => {
+                setTimeout(() => {
+                    if (!cell.contains(document.activeElement)) {
+                        finishEditing();
+                    }
+                }, 100);
+            });
+        });
+
+        // 渲染看板
+        function renderKanban() {
+            const tasks = safeGetTasks();
+            document.querySelectorAll('.swimlane').forEach(lane => {
+                const container = lane.querySelector('.cards-container');
+                container.innerHTML = '';
+                tasks.filter(task => (task.status === lane.dataset.status)).forEach(task => {
+                    if (!task.id) return;
+                    let status = VALID_STATUS.includes(task.status) ? task.status : 'Pending';
+                    let type = VALID_TYPES.includes(task.type) ? task.type : 'Pickup';
+                    let delivery_scope = (type === 'Pickup' && VALID_DELIVERY_SCOPES.includes(task.delivery_scope)) ? task.delivery_scope : '';
+                    const card = document.createElement('div');
+                    card.className = 'kanban-card';
+                    card.draggable = true;
+                    card.dataset.id = task.id;
+                    card.innerHTML = `
+                        <div class="card-header">${task.id}</div>
+                        <div class="card-body">
+                            <div class="info-row">
+                                <span class="info-label">Pallets:</span>
+                                <span class="info-value">${task.pallets || ''}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Type:</span>
+                                <span class="info-value">${type}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Delivery Scope:</span>
+                                <span class="info-value">${type === 'Pickup' ? (delivery_scope || '') : ''}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Due Date:</span>
+                                <span class="info-value due-date">${task.date || ''}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Notes:</span>
+                                <span class="info-value">${task.notes || ''}</span>
+                            </div>
+                        </div>
+                    `;
+                    container.appendChild(card);
+                });
+            });
+        }
+
+        // 修改拖拽事件处理
+        document.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            const taskId = e.dataTransfer.getData('text/plain');
+            const newStatus = e.target.closest('.swimlane')?.dataset.status;
+            if (newStatus) {
+                let tasks = await loadTasksFromSupabase();
+                let task = tasks.find(t => t.id === taskId);
+                if (task) {
+                    task.status = newStatus;
+                    await saveTaskToSupabase(task);
+                    await initializeDataSupabase();
+                    const lane = e.target.closest('.swimlane');
+                    if (lane) {
+                    lane.classList.add('updated');
+                    setTimeout(() => {
+                        lane.classList.remove('updated');
+                    }, 1000);
+                    }
+                }
+            }
+        });
+
+        // 强化修复本地存储中所有任务的 delivery_scope 字段为标准值
+        function fixAllDeliveryScope() {
+            let tasks = safeGetTasks();
+            let changed = false;
+            tasks.forEach(task => {
+                // 如果渲染出来是Local Delivery，但字段不是标准值，也修正
+                if (!task.delivery_scope || !VALID_DELIVERY_SCOPES.includes(task.delivery_scope)) {
+                    // 只要type为Delivery或Pickup，且delivery_scope不是Interstate Delivery，都修正为Local Delivery
+                    if (task.type === 'Delivery' || task.type === 'Pickup') {
+                        if (task.delivery_scope !== 'Interstate Delivery') {
+                            task.delivery_scope = 'Local Delivery';
+                            changed = true;
+                        }
+                    }
+                } else {
+                    // 兜底修正常见非标准写法
+                    let val = String(task.delivery_scope).trim().toLowerCase().replace(/\s+/g, ' ');
+                    if (val === 'local delivery' || val === 'localdelivery' || val === '本地') {
+                        if (task.delivery_scope !== 'Local Delivery') {
+                            task.delivery_scope = 'Local Delivery';
+                            changed = true;
+                        }
+                    } else if (val === 'interstate delivery' || val === 'interstatedelivery' || val === '跨州' || val === '洲际') {
+                        if (task.delivery_scope !== 'Interstate Delivery') {
+                            task.delivery_scope = 'Interstate Delivery';
+                            changed = true;
+                        }
+                    }
+                }
+            });
+            if (changed) {
+                localStorage.setItem('logisticsTasks', JSON.stringify(tasks));
+            }
+        }
+
+        // 初始化数据
+        function initializeData() {
+            renderTable();
+            renderKanban();
+        }
+
+        // 初始化存储
+        function initializeStorage() {
+            if (!localStorage.getItem('logisticsTasks')) {
+                const validTasks = sampleTasks.filter(validateTask);
+                localStorage.setItem('logisticsTasks', JSON.stringify(validTasks));
+            }
+        }
+
+        // == Supabase 数据优先的初始化和渲染 ==
+        let hasInitSampleTasks = false;
+        async function initializeDataSupabase() {
+            let tasks = [];
+            try {
+                tasks = await loadTasksFromSupabase();
+                window._lastSupabaseTasks = tasks;
+                console.log('Supabase拉取到的tasks:', tasks);
+            } catch (e) {
+                console.error('Supabase 拉取数据失败', e);
+            }
+            // 只在第一次加载且数据库为空时才初始化示例数据
+            if (!tasks || tasks.length === 0) {
+                if (!hasInitSampleTasks) {
+                    console.log('首次加载，初始化示例数据...');
+                    for (const t of sampleTasks) {
+                        await saveTaskToSupabase(t);
+                    }
+                    hasInitSampleTasks = true;
+                    tasks = [...sampleTasks];
+                }
+            } else {
+                hasInitSampleTasks = true;
+            }
+            // 只拉取pdfMap，不再setPdfMap
+            const pdfMap = await getPdfMap();
+            renderTableSupabase(tasks, pdfMap);
+            renderKanbanSupabase(tasks);
+        }
+
+        // == 用 Supabase 数据渲染表格 ==
+        function renderTableSupabase(tasks, pdfMap) {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+            tasks.forEach(task => {
+                if (!task.id) return;
+                let status = VALID_STATUS.includes(task.status) ? task.status : 'Pending';
+                let type = VALID_TYPES.includes(task.type) ? task.type : 'Pickup';
+                let delivery_scope = (type === 'Pickup' && VALID_DELIVERY_SCOPES.includes(task.delivery_scope)) ? task.delivery_scope : '';
+                const row = document.createElement('tr');
+                row.dataset.id = task.id;
+                row.dataset.status = status;
+                const statusClass = status.toLowerCase().replace(' ', '-');
+                // PDF图标判断
+                let pdfIconHtml = '';
+                if (pdfMap && pdfMap[task.id]) {
+                    pdfIconHtml = `<span class="pdf-download-icon" data-id="${task.id}" title="Download PDF" style="cursor:pointer;font-size:18px;color:#F7941D;margin-left:8px;vertical-align:middle;">&#8595;</span>`;
+                } else {
+                    pdfIconHtml = `<span class="pdf-upload-icon" data-id="${task.id}" title="Add PDF" style="cursor:pointer;font-size:20px;color:#888;margin-left:8px;vertical-align:middle;">+</span>`;
+                }
+                row.innerHTML = `
+                    <td class="editable" data-field="id">
+                        <span class="id-with-x">
+                            <button class="delete-task-x" data-id="${task.id}" title="Delete">×</button>
+                            <span>${task.id}</span>
+                            ${pdfIconHtml}
+                        </span>
+                    </td>
+                    <td class="editable" data-field="status">
+                        <span class="status-badge">${status}</span>
+                    </td>
+                    <td class="editable" data-field="pallets">${task.pallets || ''}</td>
+                    <td class="editable" data-field="type">${type}</td>
+                    <td class="editable" data-field="delivery_scope">${type === 'Pickup' ? (delivery_scope || '') : ''}</td>
+                    <td class="editable" data-field="date">${task.date || ''}</td>
+                    <td class="editable" data-field="notes">${task.notes || ''}</td>
+                `;
+                row.className = statusClass;
+                tbody.appendChild(row);
+            });
+            renderTableHeaderSortAndFilter();
+        }
+
+        // == 用 Supabase 数据渲染看板 ==
+        function renderKanbanSupabase(tasks) {
+            document.querySelectorAll('.swimlane').forEach(lane => {
+                const container = lane.querySelector('.cards-container');
+                container.innerHTML = '';
+                tasks.filter(task => (task.status === lane.dataset.status)).forEach(task => {
+                    if (!task.id) return;
+                    let status = VALID_STATUS.includes(task.status) ? task.status : 'Pending';
+                    let type = VALID_TYPES.includes(task.type) ? task.type : 'Pickup';
+                    let delivery_scope = (type === 'Pickup' && VALID_DELIVERY_SCOPES.includes(task.delivery_scope)) ? task.delivery_scope : '';
+                    const card = document.createElement('div');
+                    card.className = 'kanban-card';
+                    card.draggable = true;
+                    card.dataset.id = task.id;
+                    card.innerHTML = `
+                        <div class="card-header">${task.id}</div>
+                        <div class="card-body">
+                            <div class="info-row">
+                                <span class="info-label">Pallets:</span>
+                                <span class="info-value">${task.pallets || ''}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Type:</span>
+                                <span class="info-value">${type}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Delivery Scope:</span>
+                                <span class="info-value">${type === 'Pickup' ? (delivery_scope || '') : ''}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Due Date:</span>
+                                <span class="info-value due-date">${task.date || ''}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Notes:</span>
+                                <span class="info-value">${task.notes || ''}</span>
+                            </div>
+                        </div>
+                    `;
+                    container.appendChild(card);
+                });
+            });
+            // === 自动修正：为每个卡片绑定 dragstart/dragend ===
+            document.querySelectorAll('.kanban-card').forEach(card => {
+                card.addEventListener('dragstart', e => {
+                    e.dataTransfer.setData('text/plain', card.dataset.id);
+                    e.target.style.opacity = '0.5';
+                });
+                card.addEventListener('dragend', e => {
+                    e.target.style.opacity = '';
+                });
+            });
+        }
+
+        // == 页面初始化时优先用 Supabase ==
+        document.addEventListener('DOMContentLoaded', () => {
+            // 初始化数据
+            initializeDataSupabase();
+
+            // 初始化拖拽事件
+            document.addEventListener('dragstart', e => {
+                if (e.target.classList.contains('kanban-card')) {
+                    e.dataTransfer.setData('text/plain', e.target.dataset.id);
+                    e.target.style.opacity = '0.5';
+                }
+            });
+
+            document.addEventListener('dragover', e => {
+                e.preventDefault();
+                const lane = e.target.closest('.swimlane');
+                if (lane) lane.classList.add('drag-over');
+            });
+
+            document.addEventListener('dragend', e => {
+                document.querySelectorAll('.swimlane').forEach(l => l.classList.remove('drag-over'));
+            });
+
+            // Export Table 按钮
+            const exportBtn = document.getElementById('exportTableBtn');
+            if(exportBtn) {
+                exportBtn.onclick = () => {
+                    const rows = Array.from(document.querySelectorAll('#logisticsTable tr'));
+                    const csv = rows.map(row => {
+                        return Array.from(row.querySelectorAll('th,td')).map(cell => '"' + cell.innerText.replace(/"/g, '""') + '"').join(',');
+                    }).join('\n');
+                    const blob = new Blob([csv], { type: 'text/csv' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'logistics_table.csv';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                };
+            }
+
+            // Add PDF 按钮
+            const addPdfBtn = document.getElementById('addPdfGlobalBtn');
+            const pdfFileInput = document.getElementById('pdfFileInput');
+            if(addPdfBtn && pdfFileInput) {
+                addPdfBtn.onclick = () => {
+                    pdfFileInput.value = '';
+                    pdfFileInput.click();
+                };
+                pdfFileInput.onchange = async (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    if (file.type !== 'application/pdf') {
+                        alert('请选择PDF文件');
+                        return;
+                    }
+                    try {
+                        // 1. 读取为ArrayBuffer
+                        const arrayBuffer = await file.arrayBuffer();
+                        // 2. PDF转文本
+                        const pdfText = await pdfToText(arrayBuffer);
+                        console.log('PDF转文本内容:', pdfText);
+
+                        // 3. 优先本地正则提取Order Number
+                        let trackingId = await extractOrderNumberFromPdfText(pdfText);
+                        console.log('本地正则提取单号:', trackingId);
+
+                        // 4. 若本地未识别到，再调用Deepseek兜底
+                        if (!trackingId) {
+                            const dsRes = await fetch('https://api.deepseek.com/v1/chat/completions', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Authorization': 'Bearer sk-0cab5429310d438487895671c2fbc943'
+                                },
+                                body: JSON.stringify({
+                                    model: 'deepseek-chat',
+                                    messages: [{
+                                        role: 'system',
+                                        content: `You are a logistics assistant. Your job is to extract ONLY the main logistics tracking number from the following PDF text. ONLY extract the tracking number after 'Order Number:' (e.g. TO20250529360451500042). Ignore all other TO numbers in the table. Only return the unique tracking number as a plain string, no explanation, no markdown, no code block.`
+                                    }, {
+                                        role: 'user',
+                                        content: pdfText.slice(0, 8000)
+                                    }]
+                                })
+                            });
+                            const dsData = await dsRes.json();
+                            if (dsData.choices && dsData.choices[0] && dsData.choices[0].message && dsData.choices[0].message.content) {
+                                trackingId = dsData.choices[0].message.content.trim().replace(/[`\n\r "]+/g, '');
+                                const match = trackingId.match(/TO[0-9A-Za-z]+/);
+                                trackingId = match ? match[0] : '';
+                            }
+                            console.log('AI返回内容:', dsData);
+                        }
+                        if (trackingId) {
+                            await uploadPdfToSupabase(file, trackingId);
+                        } else {
+                            alert('无法从PDF中识别物流单号');
+                        }
+                    } catch (err) {
+                        alert('PDF识别错误: ' + err.message);
+                    }
+                };
+            }
+
+            // Identify Image 按钮
+            const identifyImageBtn = document.getElementById('identifyImageBtn');
+            if(identifyImageBtn) {
+                identifyImageBtn.onclick = async function() {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'image/png,image/jpeg,image/jpg';
+                    input.style.display = 'none';
+                    document.body.appendChild(input);
+                    input.onchange = async function(ev) {
+                        const file = input.files[0];
+                        if (!file) return;
+                        showChatMessage('正在识别图片，请稍候...', 'assistant');
+                        try {
+                            // 使用 OCR.Space 识别图片
+                            const formData = new FormData();
+                            formData.append('file', file);
+                            formData.append('apikey', 'K82547018388957');
+                            formData.append('language', 'eng');
+                            formData.append('isTable', 'true');
+                            const ocrRes = await fetch('https://api.ocr.space/parse/image', {
+                                method: 'POST',
+                                body: formData
+                            });
+                            const ocrData = await ocrRes.json();
+                            let text = '';
+                            if (ocrData && ocrData.ParsedResults && ocrData.ParsedResults[0]) {
+                                text = ocrData.ParsedResults[0].ParsedText || '';
+                            }
+                            console.log('OCR原始文本:', text);
+                            if (!text) {
+                                showChatMessage('OCR未能从图片中识别出任何文本', 'error');
+                                return;
+                            }
+                            showChatMessage('正在用AI分析识别出的文本，请稍候...', 'assistant');
+                            const prompt = `Please extract all logistics tasks from the following table text. Output a JSON array, each object should contain: \n- orderNo (must be TO + at least 15 digits/letters, no extra characters, no spaces)\n- type (only 'Pickup' or 'Delivery', if not clear, use 'Delivery')\n- pallets (number)\n- date (format as DD/MM, do NOT include year)\n- notes (only use the content from the Notes column, if not present, leave empty. Do not include contact, address, or other info)\nIgnore any irrelevant information. Do not include client, contact, or address fields. Output strict JSON array, no explanation, no markdown, no code block.\n\nText:\n${text}`;
+                            // Deepseek AI分析
+                            const aiRes = await fetch('https://api.deepseek.com/v1/chat/completions', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Authorization': 'Bearer sk-0cab5429310d438487895671c2fbc943'
+                                },
+                                body: JSON.stringify({
+                                    model: 'deepseek-chat',
+                                    messages: [
+                                        { role: 'system', content: prompt }
+                                    ]
+                                })
+                            });
+                            const aiData = await aiRes.json();
+                            let aiContent = aiData.choices?.[0]?.message?.content || '';
+                            console.log('AI返回内容:', aiContent);
+                            aiContent = aiContent.replace(/```json|```/gi, '').trim();
+                            // 只保留有效JSON数组
+                            const firstBracket = aiContent.indexOf('[');
+                            const lastBracket = aiContent.lastIndexOf(']');
+                            if (firstBracket !== -1 && lastBracket !== -1) {
+                                aiContent = aiContent.substring(firstBracket, lastBracket + 1);
+                            }
+                            console.log('AI内容用于JSON.parse前:', aiContent);
+                            // AI内容解析后，强制转换为标准数组并修正结构
+                            let tasks = [];
+                            try {
+                                tasks = JSON.parse(aiContent);
+                            } catch (e) {
+                                console.error('第一次JSON.parse失败:', e, 'aiContent:', aiContent);
+                                try {
+                                    let fixed = aiContent.replace(/'/g, '"').replace(/,\s*([}\]])/g, '$1');
+                                    tasks = JSON.parse(fixed);
+                                } catch (e2) {
+                                    console.error('AI内容JSON.parse失败:', e2, 'aiContent:', aiContent);
+                                    showChatMessage('AI分析失败，请重试', 'error');
+                                    return console.error('AI分析失败return，aiContent:', aiContent);
+                                }
+                            }
+                            if (!Array.isArray(tasks)) {
+                                tasks = Object.values(tasks);
+                            }
+                            console.log('AI解析后tasks类型:', typeof tasks, 'isArray:', Array.isArray(tasks), '内容:', tasks);
+                            const formattedTasks = tasks.map(t => ({
+                                id: t.orderNo || t.id || generateUniqueId(),
+                                status: 'Pending',
+                                pallets: Number(t.pallets) || 0,
+                                type: t.type || '',
+                                delivery_scope: t.type === 'Pickup' ? (t.delivery_scope || '') : '',
+                                date: t.date || getTodayDateStr(),
+                                notes: t.notes || ''
+                            }));
+                            console.log('图片识别后待插入的formattedTasks:', formattedTasks);
+                            let successCount = 0, failCount = 0;
+                            for (const task of formattedTasks) {
+                                try {
+                                    await saveTaskToSupabase(task);
+                                    successCount++;
+                                } catch (err) {
+                                    console.error('单条插入失败:', err, task);
+                                    failCount++;
+                                }
+                            }
+                            showChatMessage(`图片识别批量任务创建完成，成功: ${successCount}，失败: ${failCount}`, 'assistant');
+                            await initializeDataSupabase();
+                        } catch (err) {
+                            console.error('图片识别或AI分析失败:', err);
+                            showChatMessage('图片识别或AI分析失败: ' + err.message, 'error');
+                        }
+                    };
+                    input.click();
+                };
+            }
+
+            // 聊天输入框事件处理
+            const commandInput = document.getElementById('command-input');
+            if(commandInput) {
+                commandInput.addEventListener('keypress', async (e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        const input = e.target.value.trim();
+                        if (!input) return;
+
+                        e.target.value = '';
+                        showChatMessage(input, 'user');
+
+                        // 如果有待确认的图片识别任务
+                        if (window.pendingImageTasks) {
+                            console.log('准备批量插入，pendingImageTasks:', window.pendingImageTasks, '类型:', typeof window.pendingImageTasks, 'isArray:', Array.isArray(window.pendingImageTasks), 'length:', window.pendingImageTasks.length);
+                            if (input.toLowerCase() === 'yes') {
+                                console.log('确认时pendingImageTasks:', window.pendingImageTasks);
+                                let successCount = 0, failCount = 0;
+                                for (const t of window.pendingImageTasks) {
+                                    try {
+                                        const newTask = t;
+                                        console.log('即将写入的newTask:', newTask);
+                                        await saveTaskToSupabase(newTask);
+                                        successCount++;
+                                    } catch (err) {
+                                        console.error('批量插入任务出错:', err, t);
+                                        failCount++;
+                                    }
+                                }
+                                console.log('批量插入循环结束');
+                                showChatMessage(`任务创建成功！成功: ${successCount}, 失败: ${failCount}`, 'assistant');
+                                window.pendingImageTasks = null;
+                                await initializeDataSupabase();
+                            } else if (input.toLowerCase() === 'no') {
+                                showChatMessage('操作已取消', 'assistant');
+                                window.pendingImageTasks = null;
+                            } else {
+                                showChatMessage('请回复"yes"确认或"no"取消', 'assistant');
+                            }
+                            return;
+                        }
+
+                        // 处理普通命令输入
+                        showChatMessage('处理中...', 'loading');
+                        const lines = input.split('\n').map(line => line.trim()).filter(line => line);
+                        let successCount = 0;
+                        let failCount = 0;
+                        for (const line of lines) {
+                            try {
+                                const result = await ChatAssistant.parseCommand(line);
+                                if (result.error) throw new Error(result.error);
+
+                                if (result.action === 'CREATE') {
+                                    if (!result.status) result.status = 'Pending';
+                                    const userId = extractIdFromInput(line);
+                                    let parsedDate = result.date ? parseNaturalDate(result.date) : '';
+                                    if (!parsedDate) parsedDate = getTodayDateStr();
+                                    const newTask = {
+                                        id: userId || result.id || generateUniqueId(),
+                                        status: result.status,
+                                        pallets: Number(result.pallets) || 0,
+                                        type: result.type || '',
+                                        delivery_scope: result.delivery_scope || '',
+                                        date: parsedDate
+                                    };
+                                    if (newTask.id) {
+                                        await saveTaskToSupabase(newTask);
+                                        await initializeDataSupabase();
+                                        if (validateTask(newTask)) {
+                                            showChatMessage(`任务创建成功: ${newTask.id}`, 'assistant');
+                                        } else {
+                                            showChatMessage(`部分字段缺失，已记录可识别信息: ${newTask.id}`, 'assistant');
+                                        }
+                                        successCount++;
+                                    } else {
+                                        throw new Error('缺少关键字段，未能创建');
+                                    }
+                                } else {
+                                    showChatMessage(`暂不支持批量处理该类型指令: ${line}`, 'error');
+                                    failCount++;
+                                }
+                            } catch (err) {
+                                showChatMessage(`指令处理失败: ${line}，原因：${err.message}`, 'error');
+                                failCount++;
+                            }
+                        }
+                        showChatMessage(`批量处理完成，成功${successCount}条，失败${failCount}条。`, 'assistant');
+                    }
+                });
+            }
+
+            // 表格PDF图标点击事件
+            const tableBody = document.getElementById('tableBody');
+            if(tableBody) {
+                tableBody.addEventListener('click', async function(e) {
+                    // 上传PDF
+                    if (e.target.classList.contains('pdf-upload-icon')) {
+                        const trkId = e.target.getAttribute('data-id');
+                        const input = document.createElement('input');
+                        input.type = 'file';
+                        input.accept = 'application/pdf';
+                        input.style.display = 'none';
+                        document.body.appendChild(input);
+                        input.onchange = async function(ev) {
+                            const file = input.files[0];
+                            if (!file) return;
+                            if (file.type !== 'application/pdf') {
+                                alert('请选择PDF文件');
+                                document.body.removeChild(input);
+                                return;
+                            }
+                            await uploadPdfToSupabase(file, trkId);
+                            document.body.removeChild(input);
+                        };
+                        input.click();
+                    }
+                    // 下载PDF
+                    if (e.target.classList.contains('pdf-download-icon')) {
+                        const trkId = e.target.getAttribute('data-id');
+                        await downloadPdfFromSupabase(trkId);
+                    }
+                });
+            }
+        });
+
+        // 监听删除按钮
+        document.addEventListener('click', async function(e) {
+            if (e.target.classList.contains('delete-task-x')) {
+                const id = e.target.getAttribute('data-id');
+                if (confirm('确定要删除这个任务吗？')) {
+                    await deleteTaskFromSupabase(id);
+                    await initializeDataSupabase();
+                }
+            }
+        });
+
+        // == PDF 相关操作全部只用 Supabase ==
+        // 删除/注释本地 pdfMap 相关函数
+        /*
+        function getPdfMap() { ... }
+        function setPdfMap(map) { ... }
+        function bindPdfToId(id, pdfData) { ... }
+        function getPdfById(id) { ... }
+        function removePdfById(id) { ... }
+        */
+
+        // 修改 PDF 上传、下载、解绑等操作，全部用 Supabase
+        async function uploadPdfToSupabase(file, trackingId) {
+            const fileName = file.name;
+            
+            // 检查是否已存在相同的PDF映射
+            const pdfMap = await getPdfMap();
+            if (pdfMap[trackingId]) {
+                // 如果已存在，先删除旧的映射
+                await deletePdfMapFromSupabase(trackingId);
+            }
+
+            // 上传到 Supabase Storage
+            const { data, error } = await supabase.storage.from(SUPABASE_BUCKET).upload(fileName, file, { upsert: true });
+            if (error) {
+                alert('上传失败: ' + error.message);
+                return false;
+            }
+            
+            // 保存映射关系到数据库
+            await savePdfMapToSupabase(trackingId, fileName);
+            alert('PDF已上传并绑定到 ' + trackingId);
+            await initializeDataSupabase();
+            return true;
+        }
+
+        async function downloadPdfFromSupabase(trackingId) {
+            const pdfMap = await getPdfMap();
+            const fileName = pdfMap[trackingId];
+            if (!fileName) {
+                alert('No PDF bound to this tracking number.');
+                return;
+            }
+            const { data, error } = await supabase.storage.from(SUPABASE_BUCKET).getPublicUrl(fileName);
+            if (error || !data || !data.publicUrl) {
+                alert('Failed to get public URL: ' + (error ? error.message : 'No URL'));
+                return;
+            }
+            const a = document.createElement('a');
+            a.href = data.publicUrl;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        async function unbindPdfFromSupabase(trackingId) {
+            try {
+                // 先查出文件名
+                const pdfMap = await getPdfMap();
+                let fileName = pdfMap[trackingId];
+                console.log('解绑时获取到的PDF映射:', pdfMap);
+                console.log('解绑时要删除的Storage文件名:', fileName);
+                
+                if (!fileName && trackingId) {
+                    fileName = `${trackingId}.pdf`;
+                    console.log('fileName为空，尝试用trackingId拼接:', fileName);
+                }
+                
+                if (fileName) {
+                    console.log('开始删除Storage文件，Bucket:', SUPABASE_BUCKET, '文件名:', fileName);
+                    const { data, error: storageError } = await supabase.storage
+                        .from(SUPABASE_BUCKET)
+                        .remove([fileName]);
+                    
+                    if (storageError) {
+                        console.error('删除Storage文件失败:', storageError);
+                        alert('删除Storage文件失败: ' + storageError.message);
+                    } else {
+                        console.log('Storage文件删除成功，返回数据:', data);
+                    }
+                } else {
+                    console.warn('未找到要删除的Storage文件名');
+                }
+                
+                // 删除数据库映射
+                const deleteResult = await deletePdfMapFromSupabase(trackingId);
+                console.log('删除数据库映射结果:', deleteResult);
+                
+                alert('PDF已解绑并尝试删除存储文件: ' + trackingId);
+                await initializeDataSupabase();
+            } catch (error) {
+                console.error('解绑PDF过程中发生错误:', error);
+                alert('解绑PDF时发生错误: ' + error.message);
+            }
+        }
+
+        // == Supabase 数据操作函数 ==
+        async function loadTasksFromSupabase() {
+            const { data, error } = await supabase
+                .from('tasks')
+                .select('*')
+                .order('created_at', { ascending: false });
+            
+            if (error) {
+                console.error('Error loading tasks:', error);
+                return [];
+            }
+            return data || [];
+        }
+
+        async function saveTaskToSupabase(task) {
+            console.log('saveTaskToSupabase被调用，task:', task);
+            const { data, error } = await supabase
+                .from('tasks')
+                .upsert(task)
+                .select();
+            if (error) {
+                console.error('Error saving task:', error, 'task:', task);
+                showChatMessage('数据库写入失败: ' + error.message, 'error');
+                return null;
+            }
+            console.log('saveTaskToSupabase写入后返回:', data);
+            return data[0];
+        }
+
+        async function deleteTaskFromSupabase(trackingId) {
+            const { error } = await supabase
+                .from('tasks')
+                .delete()
+                .eq('id', trackingId);
+            
+            if (error) {
+                console.error('Error deleting task:', error);
+                return false;
+            }
+            return true;
+        }
+
+        async function loadPdfMapsFromSupabase() {
+            const { data, error } = await supabase
+                .from('pdf_maps')
+                .select('*');
+            
+            if (error) {
+                console.error('Error loading PDF maps:', error);
+                return {};
+            }
+            
+            // 转换为本地格式
+            const map = {};
+            data.forEach(item => {
+                map[item.tracking_id] = item.file_name;
+            });
+            return map;
+        }
+
+        // 生成UUID
+        function generateUUID() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        async function savePdfMapToSupabase(trackingId, fileName) {
+            const { error } = await supabase
+                .from('pdf_maps')
+                .upsert(
+                    {
+                    tracking_id: trackingId,
+                    file_name: fileName
+                    },
+                    { onConflict: 'tracking_id' } // 必须是字符串
+                );
+            if (error) {
+                console.error('Error saving PDF map:', error);
+                return false;
+            }
+            return true;
+        }
+
+        async function deletePdfMapFromSupabase(trackingId) {
+            const { error } = await supabase
+                .from('pdf_maps')
+                .delete()
+                .eq('tracking_id', trackingId);
+            
+            if (error) {
+                console.error('Error deleting PDF map:', error);
+                return false;
+            }
+            return true;
+        }
+
+        // 修改原有的数据操作函数
+        async function getTasks() {
+            return await loadTasksFromSupabase();
+        }
+
+        async function setTasks(tasks) {
+            for (const task of tasks) {
+                await saveTaskToSupabase(task);
+            }
+        }
+
+        async function getPdfMap() {
+            return await loadPdfMapsFromSupabase();
+        }
+
+        async function setPdfMap(map) {
+            for (const [trackingId, fileName] of Object.entries(map)) {
+                await savePdfMapToSupabase(trackingId, fileName);
+            }
+        }
+
+        // 添加实时订阅
+        supabase
+            .channel('tasks_changes')
+            .on('postgres_changes', { 
+                event: '*', 
+                schema: 'public', 
+                table: 'tasks' 
+            }, payload => {
+                console.log('Tasks changed:', payload);
+                    triggerDataUpdate();
+            })
+            .subscribe();
+
+        supabase
+            .channel('pdf_maps_changes')
+            .on('postgres_changes', { 
+                event: '*', 
+                schema: 'public', 
+                table: 'pdf_maps' 
+            }, payload => {
+                console.log('PDF maps changed:', payload);
+                triggerDataUpdate();
+            })
+            .subscribe();
+
+        // 恢复 localStorage 相关代码
+        // 安全的数据获取
+        function safeGetTasks() {
+            try {
+                return JSON.parse(localStorage.getItem('logisticsTasks')) || [];
+            } catch (error) {
+                console.error('数据损坏，正在重置...');
+                showError('数据损坏，正在重置...');
+                localStorage.removeItem('logisticsTasks');
+                return [];
+            }
+        }
+
+        // 增强拖拽事件处理并加日志
+        document.querySelectorAll('.swimlane').forEach(lane => {
+            lane.addEventListener('drop', async (e) => {
+                e.preventDefault();
+                lane.classList.remove('drag-over');
+                const taskId = e.dataTransfer.getData('text/plain');
+                const newStatus = lane.dataset.status;
+                console.log('drop:', { taskId, newStatus });
+                let tasks = await loadTasksFromSupabase();
+                let task = tasks.find(t => t.id === taskId);
+                console.log('找到的任务:', task);
+                if (task) {
+                    task.status = newStatus;
+                    const result = await saveTaskToSupabase(task);
+                    console.log('保存结果:', result);
+                    await initializeDataSupabase();
+                    lane.classList.add('updated');
+                    setTimeout(() => {
+                        lane.classList.remove('updated');
+                    }, 1000);
+                } else {
+                    console.warn('未找到任务，无法变更状态');
+                }
+            });
+            lane.addEventListener('dragover', e => {
+                e.preventDefault();
+                lane.classList.add('drag-over');
+            });
+            lane.addEventListener('dragleave', e => {
+                lane.classList.remove('drag-over');
+            });
+        });
+        // 移除全局 drop 事件，避免冒泡干扰
+
+        // == 表格Tracking#列右键菜单解绑PDF功能 ==
+        document.addEventListener('contextmenu', function(e) {
+            const td = e.target.closest('td[data-field="id"]');
+            if (td) {
+                e.preventDefault();
+                const tr = td.closest('tr');
+                const trkId = tr ? tr.dataset.id : null;
+                if (!trkId) return;
+                // 构建右键菜单
+                let menu = document.getElementById('pdfUnbindMenu');
+                if (menu) menu.remove();
+                menu = document.createElement('div');
+                menu.id = 'pdfUnbindMenu';
+                menu.style.position = 'absolute';
+                menu.style.left = e.pageX + 'px';
+                menu.style.top = e.pageY + 'px';
+                menu.style.background = '#fff';
+                menu.style.border = '1px solid #ddd';
+                menu.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
+                menu.style.zIndex = 9999;
+                menu.style.padding = '0';
+                menu.style.minWidth = '120px';
+                menu.style.fontSize = '15px';
+                menu.style.borderRadius = '6px';
+                menu.innerHTML = `<div style='padding:10px 18px;cursor:pointer;'>解绑PDF</div>`;
+                menu.firstChild.onclick = function() {
+                    unbindPdfFromSupabase(trkId);
+                    menu.remove();
+                };
+                document.body.appendChild(menu);
+                // 点击其他地方关闭菜单
+                setTimeout(() => {
+                    document.addEventListener('mousedown', function handler(ev) {
+                        if (!menu.contains(ev.target)) {
+                            menu.remove();
+                            document.removeEventListener('mousedown', handler);
+                        }
+                    });
+                }, 10);
+            }
+        });
+
+        // PDF转文本函数
+        async function pdfToText(arrayBuffer) {
+            if (!window.pdfjsLib) {
+                throw new Error('pdf.js 未加载');
+            }
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            let text = '';
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const content = await page.getTextContent();
+                text += content.items.map(item => item.str).join(' ') + '\n';
+            }
+            return text;
+        }
+
+        // == 优化PDF单号提取日志 ==
+        function extractOrderNumberFromPdfText(pdfText) {
+            const idx = pdfText.indexOf('Order Number');
+            if (idx !== -1) {
+                const snippet = pdfText.slice(idx, idx + 40);
+                console.log('Order Number字段原始片段:', snippet);
+                console.log('Order Number字段unicode:', snippet.split('').map(c => c.charCodeAt(0)));
+            } else {
+                console.log('未找到Order Number字段');
+            }
+            const orderNumRegex = /Order Number[:：]?\s*(TO[0-9A-Za-z]+)/i;
+            const match = pdfText.match(orderNumRegex);
+            console.log('正则匹配结果:', match);
+            if (match) return match[1];
+            const fallback = pdfText.match(/TO[0-9A-Za-z]{12,}/);
+            console.log('兜底正则匹配结果:', fallback);
+            return fallback ? fallback[0] : '';
+        }
+    </script>
+</body>
+</html> 
