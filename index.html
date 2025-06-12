@@ -842,6 +842,26 @@
           layoutCol.appendChild(rowDiv);
         }
         card.appendChild(layoutCol);
+        
+        // 添加"Clear All"按钮，放在司机名字正下方
+        const btnWrapper = document.createElement('div');
+        btnWrapper.style.display = 'flex';
+        btnWrapper.style.justifyContent = 'flex-start';
+        btnWrapper.style.alignItems = 'flex-start';
+        btnWrapper.style.marginTop = '8px';
+        
+        const clearBtn = document.createElement('button');
+        clearBtn.className = 'orange-btn';
+        clearBtn.style.marginLeft = '0';
+        clearBtn.textContent = 'Clear All';
+        clearBtn.onclick = async () => {
+          await supabase.from('my_pallet_allocations').delete().eq('truck_id', truck.id);
+          await refresh();
+        };
+        btnWrapper.appendChild(clearBtn);
+        // 将按钮插入到司机列下方
+        driverCol.appendChild(btnWrapper);
+        
         truckList.appendChild(card);
       });
     }
@@ -949,10 +969,6 @@
           await supabase.from('my_pallet_allocations')
             .delete()
             .match({ truck_id: obj.truck_id, task_id: obj.task_id });
-          // 同时删除任务记录
-          await supabase.from('my_tasks')
-            .delete()
-            .eq('id', obj.task_id);
           await refresh();
         }
       } catch {}
