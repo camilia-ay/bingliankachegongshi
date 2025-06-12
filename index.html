@@ -949,6 +949,10 @@
           await supabase.from('my_pallet_allocations')
             .delete()
             .match({ truck_id: obj.truck_id, task_id: obj.task_id });
+          // 同时删除任务记录
+          await supabase.from('my_tasks')
+            .delete()
+            .eq('id', obj.task_id);
           await refresh();
         }
       } catch {}
